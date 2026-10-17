@@ -2,183 +2,222 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Cluck Life - Raise & Fight</title>
+<title>Cluck Life - Prototype v2</title>
 <style>
-body { margin: 0; background: #1a1a2e; color: #eee; font-family: 'Segoe UI', Tahoma, sans-serif; display: flex; flex-direction: column; align-items: center; }
-h1 { color: #ff6b6b; text-shadow: 2px 2px #000; }
-#game-container { display: flex; gap: 20px; margin: 20px; }
-#stats, #actions { background: #16213e; padding: 15px; border-radius: 10px; width: 250px; }
-#arena { border: 3px solid #0f3460; background: #0f3460; }
-canvas { background: linear-gradient(#87CEEB, #98FB98); }
-button { background: #e94560; color: white; border: none; padding: 8px 16px; margin: 5px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #0f0f1a; color: #eee; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 10px; }
+h1 { color: #ff6b6b; margin: 10px 0; }
+#ui { display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 1100px; }
+.panel { background: #1a1a2e; padding: 12px; border-radius: 8px; min-width: 220px; }
+canvas { border: 2px solid #333; background: #87CEEB; }
+button { background: #e94560; color: white; border: none; padding: 8px 12px; margin: 4px; border-radius: 5px; cursor: pointer; font-weight: bold; }
 button:hover { background: #ff6b6b; }
-button:disabled { background: #555; cursor: not-allowed; }
-.stat { margin: 5px 0; }
-.health-bar { height: 8px; background: #333; border-radius: 4px; overflow: hidden; }
-.health-fill { height: 100%; background: lime; transition: width 0.3s; }
+button:disabled { background: #444; }
+.stat-row { display: flex; justify-content: space-between; margin: 4px 0; }
+.bar { height: 10px; background: #333; border-radius: 5px; overflow: hidden; margin: 2px 0; }
+.bar-fill { height: 100%; background: #4CAF50; }
+#log { height: 80px; overflow-y: auto; background: #000; padding: 5px; font-size: 12px; border-radius: 4px; }
 </style>
 </head>
 <body>
-<h1>🐔 CLUCK LIFE 🐔</h1>
-<p>Raise your chicken, train it, allocate points, and fight for coins!</p>
+<h1>🐔 CLUCK LIFE</h1>
+<p>Raise • Train • Allocate • Fight • Bet</p>
 
-<div id="game-container">
-  <div id="stats">
-    <h3>Your Chicken</h3>
-    <div class="stat">Level: <span id="level">1</span></div>
-    <div class="stat">XP: <span id="xp">0</span> / <span id="xpNeeded">100</span></div>
-    <div class="stat">Coins: <span id="coins">50</span></div>
-    <div class="stat">Energy: <span id="energy">100</span>/100</div>
-    <div class="stat">HP: <span id="hp">100</span></div>
-    <div class="stat">Attack: <span id="atk">10</span></div>
-    <div class="stat">Defense: <span id="def">5</span></div>
-    <div class="stat">Speed: <span id="spd">5</span></div>
-    <div class="stat">Unspent Points: <span id="points">0</span></div>
-    <button onclick="allocate('atk')">+1 Attack</button>
-    <button onclick="allocate('def')">+1 Defense</button>
-    <button onclick="allocate('spd')">+1 Speed</button>
+<div id="ui">
+  <div class="panel">
+    <h3>Chicken Stats</h3>
+    <div class="stat-row"><span>Level</span> <b id="level">1</b></div>
+    <div class="stat-row"><span>XP</span> <b id="xp">0</b>/<span id="xpNeed">100</span></div>
+    <div class="bar"><div class="bar-fill" id="xpBar" style="width:0%"></div></div>
+    <div class="stat-row"><span>Coins</span> <b id="coins">100</b></div>
+    <div class="stat-row"><span>Energy</span> <b id="energy">100</b>/100</div>
+    <div class="bar"><div class="bar-fill" id="energyBar" style="width:100%;background:#2196F3"></div></div>
+    <div class="stat-row"><span>HP</span> <b id="hp">100</b></div>
+    <div class="stat-row"><span>Attack</span> <b id="atk">10</b></div>
+    <div class="stat-row"><span>Defense</span> <b id="def">5</b></div>
+    <div class="stat-row"><span>Speed</span> <b id="spd">5</b></div>
+    <div class="stat-row"><span>Points</span> <b id="points">0</b></div>
+    <button onclick="addPoint('atk')">+ Atk</button>
+    <button onclick="addPoint('def')">+ Def</button>
+    <button onclick="addPoint('spd')">+ Spd</button>
   </div>
 
-  <div>
-    <canvas id="arena" width="400" height="250"></canvas>
-    <div id="fight-status" style="text-align:center; margin-top:10px; font-weight:bold;"></div>
+  <div class="panel">
+    <canvas id="arena" width="320" height="200"></canvas>
+    <div id="log"></div>
   </div>
 
-  <div id="actions">
+  <div class="panel">
     <h3>Actions</h3>
-    <button onclick="feed()">Feed (10 coins) - Restore Energy</button>
-    <button onclick="train('peck')">Train Peck (costs 10 energy)</button>
-    <button onclick="train('run')">Train Run (costs 10 energy)</button>
-    <button onclick="train('block')">Train Block (costs 10 energy)</button>
+    <button onclick="feed()">Feed (15 coins)</button><br>
+    <button onclick="startTrain('peck')">Train Peck</button>
+    <button onclick="startTrain('run')">Train Run</button>
+    <button onclick="startTrain('dodge')">Train Dodge</button><br>
     <hr>
-    <button onclick="fightAI()">Fight AI Opponent</button>
-    <p>Bet: <input type="number" id="bet" value="10" min="1" style="width:60px;"> coins</p>
-    <div id="result"></div>
+    <button onclick="startFight()">Fight AI (bet)</button>
+    <input type="number" id="betAmount" value="20" min="5" style="width:70px; margin:5px;"> coins
+    <div id="status"></div>
   </div>
 </div>
 
 <script>
 let chicken = {
-  level: 1,
-  xp: 0,
-  xpNeeded: 100,
-  coins: 50,
-  energy: 100,
-  hp: 100,
-  atk: 10,
-  def: 5,
-  spd: 5,
-  points: 0
+  level: 1, xp: 0, xpNeed: 100, coins: 100, energy: 100,
+  hp: 100, atk: 10, def: 5, spd: 5, points: 0
 };
+
+const canvas = document.getElementById('arena');
+const ctx = canvas.getContext('2d');
+const logEl = document.getElementById('log');
+
+function log(msg) {
+  logEl.innerHTML += msg + '<br>';
+  logEl.scrollTop = logEl.scrollHeight;
+}
 
 function updateUI() {
   document.getElementById('level').textContent = chicken.level;
   document.getElementById('xp').textContent = chicken.xp;
-  document.getElementById('xpNeeded').textContent = chicken.xpNeeded;
+  document.getElementById('xpNeed').textContent = chicken.xpNeed;
   document.getElementById('coins').textContent = chicken.coins;
   document.getElementById('energy').textContent = chicken.energy;
   document.getElementById('hp').textContent = chicken.hp;
-  document.getElementById('atk').textContent = chicken.atk;
-  document.getElementById('def').textContent = chicken.def;
-  document.getElementById('spd').textContent = chicken.spd;
+  document.getElementById('atk').textContent = chicken.atk.toFixed(1);
+  document.getElementById('def').textContent = chicken.def.toFixed(1);
+  document.getElementById('spd').textContent = chicken.spd.toFixed(1);
   document.getElementById('points').textContent = chicken.points;
+  document.getElementById('xpBar').style.width = (chicken.xp / chicken.xpNeed * 100) + '%';
+  document.getElementById('energyBar').style.width = chicken.energy + '%';
 }
 
-function gainXP(amount) {
-  chicken.xp += amount;
-  while (chicken.xp >= chicken.xpNeeded) {
-    chicken.xp -= chicken.xpNeeded;
+function gainXP(n) {
+  chicken.xp += n;
+  while (chicken.xp >= chicken.xpNeed) {
+    chicken.xp -= chicken.xpNeed;
     chicken.level++;
     chicken.points += 3;
-    chicken.xpNeeded = Math.floor(chicken.xpNeeded * 1.4);
-    chicken.hp += 10;
+    chicken.hp += 15;
+    chicken.xpNeed = Math.floor(chicken.xpNeed * 1.35);
+    log(`Level up! Now level ${chicken.level}`);
   }
   updateUI();
 }
 
-function allocate(stat) {
-  if (chicken.points > 0) {
-    chicken.points--;
-    if (stat === 'atk') chicken.atk += 1;
-    if (stat === 'def') chicken.def += 1;
-    if (stat === 'spd') chicken.spd += 1;
-    updateUI();
-  }
+function addPoint(stat) {
+  if (chicken.points <= 0) return;
+  chicken.points--;
+  chicken[stat] += 1;
+  updateUI();
 }
 
 function feed() {
-  if (chicken.coins >= 10 && chicken.energy < 100) {
-    chicken.coins -= 10;
-    chicken.energy = Math.min(100, chicken.energy + 40);
-    updateUI();
-    document.getElementById('result').textContent = 'Fed! Energy restored.';
-  } else {
-    document.getElementById('result').textContent = 'Not enough coins or already full energy.';
-  }
-}
-
-function train(type) {
-  if (chicken.energy < 10) {
-    document.getElementById('result').textContent = 'Not enough energy! Feed your chicken.';
+  if (chicken.coins < 15 || chicken.energy >= 100) {
+    document.getElementById('status').textContent = 'Can\'t feed right now';
     return;
   }
-  chicken.energy -= 10;
-  let xp = 15 + Math.floor(Math.random() * 10);
-  if (type === 'peck') chicken.atk += 0.5;
-  if (type === 'run') chicken.spd += 0.5;
-  if (type === 'block') chicken.def += 0.5;
-  gainXP(xp);
-  document.getElementById('result').textContent = `Trained ${type}! +${xp} XP`;
+  chicken.coins -= 15;
+  chicken.energy = Math.min(100, chicken.energy + 50);
+  updateUI();
+  log('Fed chicken. Energy restored.');
+}
+
+function startTrain(type) {
+  if (chicken.energy < 12) {
+    document.getElementById('status').textContent = 'Need more energy!';
+    return;
+  }
+  chicken.energy -= 12;
+  let bonus = 0.8 + Math.random() * 0.6;
+  if (type === 'peck') chicken.atk += bonus;
+  if (type === 'run') chicken.spd += bonus;
+  if (type === 'dodge') chicken.def += bonus;
+  gainXP(20 + Math.floor(Math.random()*15));
+  log(`Trained ${type}!`);
   updateUI();
 }
 
-function fightAI() {
-  const bet = parseInt(document.getElementById('bet').value) || 10;
-  if (chicken.coins < bet || chicken.energy < 15) {
-    document.getElementById('result').textContent = 'Not enough coins or energy for a fight!';
+function drawChicken(x, y, color, facing) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (facing < 0) ctx.scale(-1, 1);
+  // body
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 28, 22, 0, 0, Math.PI*2);
+  ctx.fill();
+  // comb
+  ctx.fillStyle = 'red';
+  ctx.beginPath();
+  ctx.moveTo(-8, -18); ctx.lineTo(0, -32); ctx.lineTo(8, -18); ctx.fill();
+  // beak
+  ctx.fillStyle = 'orange';
+  ctx.beginPath();
+  ctx.moveTo(22, -4); ctx.lineTo(34, 0); ctx.lineTo(22, 4); ctx.fill();
+  // eye
+  ctx.fillStyle = 'black';
+  ctx.beginPath(); ctx.arc(12, -6, 3, 0, Math.PI*2); ctx.fill();
+  // legs
+  ctx.strokeStyle = 'yellow'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-8, 18); ctx.lineTo(-8, 32); ctx.moveTo(8, 18); ctx.lineTo(8, 32); ctx.stroke();
+  ctx.restore();
+}
+
+function startFight() {
+  const bet = parseInt(document.getElementById('betAmount').value) || 20;
+  if (chicken.coins < bet || chicken.energy < 20) {
+    document.getElementById('status').textContent = 'Not enough coins or energy';
     return;
   }
   chicken.coins -= bet;
-  chicken.energy -= 15;
+  chicken.energy -= 20;
 
-  // Simple AI opponent scaled to your level
   const ai = {
-    hp: 80 + chicken.level * 8,
-    atk: 8 + chicken.level * 1.2,
-    def: 4 + chicken.level * 0.5,
-    spd: 4 + chicken.level * 0.4
+    hp: 90 + chicken.level * 10,
+    atk: 9 + chicken.level * 1.5,
+    def: 5 + chicken.level * 0.6,
+    spd: 5 + chicken.level * 0.5
   };
 
-  let pHp = chicken.hp;
-  let aHp = ai.hp;
-  let log = [];
-
-  while (pHp > 0 && aHp > 0) {
-    // Player attacks
-    let dmg = Math.max(1, chicken.atk - ai.def * 0.5 + Math.random() * 5);
+  let pHp = chicken.hp, aHp = ai.hp;
+  log('--- Fight Start ---');
+  let turns = 0;
+  while (pHp > 0 && aHp > 0 && turns < 30) {
+    turns++;
+    // player
+    let dmg = Math.max(1, (chicken.atk - ai.def * 0.4) * (0.8 + Math.random()*0.5));
     aHp -= dmg;
-    log.push(`You peck for ${dmg.toFixed(0)} dmg`);
+    log(`You hit for ${dmg.toFixed(0)}`);
     if (aHp <= 0) break;
-    // AI attacks
-    dmg = Math.max(1, ai.atk - chicken.def * 0.5 + Math.random() * 5);
+    // ai
+    dmg = Math.max(1, (ai.atk - chicken.def * 0.4) * (0.8 + Math.random()*0.5));
     pHp -= dmg;
-    log.push(`AI pecks for ${dmg.toFixed(0)} dmg`);
+    log(`AI hits for ${dmg.toFixed(0)}`);
   }
 
   const won = pHp > 0;
   if (won) {
-    const reward = bet * 2 + 20;
+    const reward = Math.floor(bet * 1.8) + 25;
     chicken.coins += reward;
-    gainXP(30 + chicken.level * 5);
-    document.getElementById('result').textContent = `Victory! +${reward} coins`;
+    gainXP(40 + chicken.level * 8);
+    log(`WIN! +${reward} coins`);
+    document.getElementById('status').textContent = `Victory! +${reward} coins`;
   } else {
-    document.getElementById('result').textContent = 'Defeated... better train more!';
+    log('Lost the fight...');
+    document.getElementById('status').textContent = 'Defeated. Train more!';
   }
   updateUI();
-  document.getElementById('fight-status').textContent = log.slice(-4).join(' | ');
+
+  // simple visual
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawChicken(80, 100, '#fff', 1);
+  drawChicken(240, 100, '#c85a17', -1);
+  ctx.fillStyle = '#000';
+  ctx.font = '16px sans-serif';
+  ctx.fillText(won ? 'VICTORY!' : 'DEFEAT', 120, 40);
 }
 
 updateUI();
+log('Welcome to Cluck Life. Train, feed, and fight!');
 </script>
 </body>
 </html>
