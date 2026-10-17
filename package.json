@@ -1,9 +1,10 @@
 {
   "name": "cluck-life",
   "private": true,
-  "description": "Raise, train, and fight your chicken in a tiny Duck Life-style prototype.",
+  "description": "Raise, train, and fight your chicken up a ladder of rivals. Phone-first browser game.",
   "scripts": {
     "start": "python3 -m http.server 8765",
-    "test": "node --test game.test.js"
+    "test": "node --test game.test.js",
+    "build": "rm -rf dist && mkdir dist && cp index.html game.js gate.js dist/ && node -e \"require('./dist/game.js')\" && echo built dist/"
   }
 }

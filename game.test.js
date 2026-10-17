@@ -88,3 +88,129 @@ test('actionAvailability disables spent points and full-energy rest', () => {
   assert.equal(chicken.spd, 6);
   assert.equal(chicken.points, 0);
 });
+
+function seeded(seed) {
+  let s = seed >>> 0;
+  return function () {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
+
+test('the faster chicken strikes first', () => {
+  const fast = { hp: 100, atk: 10, def: 5, spd: 20 };
+  const slow = { hp: 100, atk: 10, def: 5, spd: 4 };
+  assert.equal(game.simulate(fast, slow, seeded(1)).firstSide, 'you');
+  assert.equal(game.simulate(slow, fast, seeded(1)).firstSide, 'foe');
+  assert.equal(game.simulate(slow, fast, seeded(1)).beats[0].who, 'foe');
+});
+
+test('speed raises dodge chance, capped', () => {
+  assert.ok(game.dodgeChance(15, 5) > game.dodgeChance(5, 5));
+  assert.ok(game.dodgeChance(5, 15) < game.dodgeChance(5, 5));
+  assert.equal(game.dodgeChance(999, 0), 0.4);
+  assert.equal(game.dodgeChance(0, 999), 0.04);
+});
+
+test('speed actually changes fight outcomes', () => {
+  const foe = game.RIVALS[1];
+  function winRate(spd) {
+    const rng = seeded(42);
+    let wins = 0;
+    for (let i = 0; i < 400; i += 1) {
+      if (game.simulate({ hp: 110, atk: 12, def: 6, spd: spd }, foe, rng).won) wins += 1;
+    }
+    return wins / 400;
+  }
+  assert.ok(winRate(16) > winRate(4) + 0.15);
+});
+
+test('fight beats are a playable timeline that ends the fight', () => {
+  const chicken = game.createChicken();
+  const result = game.fight(chicken, 10, seeded(7), game.RIVALS[0]);
+  assert.equal(result.ok, true);
+  assert.ok(result.log.length >= 3);
+  for (const beat of result.log) {
+    assert.ok(beat.who === 'you' || beat.who === 'foe');
+    assert.ok(['hit', 'crit', 'dodge'].includes(beat.kind));
+    if (beat.kind === 'dodge') assert.equal(beat.dmg, 0);
+    else assert.ok(beat.dmg >= 1);
+  }
+  const lastBeat = result.log[result.log.length - 1];
+  assert.equal(lastBeat.foeHp, result.aHp);
+  assert.equal(lastBeat.youHp, result.pHp);
+});
+
+test('a fresh chicken can beat Pip but not Nugget', () => {
+  const rng = seeded(3);
+  let pip = 0;
+  let nugget = 0;
+  for (let i = 0; i < 200; i += 1) {
+    if (game.simulate(game.createChicken(), game.RIVALS[0], rng).won) pip += 1;
+    if (game.simulate(game.createChicken(), game.RIVALS[1], rng).won) nugget += 1;
+  }
+  assert.ok(pip > 180);
+  assert.ok(nugget < 20);
+});
+
+test('beating the next rival unlocks the one after; rematches pay less and do not advance', () => {
+  const g = game.createGame('Test');
+  const win = game.fightRival(g, 10, seeded(5));
+  assert.equal(win.won, true);
+  assert.equal(g.beaten, 1);
+  assert.equal(win.unlocked, 'Nugget');
+  assert.equal(g.chicken.coins, 100 - 10 + 10 * 2 + game.RIVALS[0].purse);
+
+  g.chicken.energy = 100;
+  const coins = g.chicken.coins;
+  const re = game.fightRival(g, 10, seeded(5), 0);
+  assert.equal(re.rematch, true);
+  assert.equal(re.won, true);
+  assert.equal(g.beaten, 1);
+  assert.equal(g.chicken.coins, coins - 10 + 20 + Math.floor(game.RIVALS[0].purse / 4));
+
+  assert.equal(game.fightRival(g, 10, seeded(5), 3).ok, false);
+});
+
+test('beating the last rival makes you champion', () => {
+  const g = game.createGame('Champ');
+  g.beaten = game.RIVALS.length - 1;
+  Object.assign(g.chicken, { hp: 5000, atk: 500, def: 200, spd: 200 });
+  const r = game.fightRival(g, 5, seeded(9));
+  assert.equal(r.won, true);
+  assert.equal(r.newChampion, true);
+  assert.equal(g.beaten, game.RIVALS.length);
+});
+
+test('nap is only free when too tired to fight', () => {
+  const chicken = game.createChicken();
+  chicken.energy = 60;
+  assert.equal(game.canRest(chicken), false);
+  assert.equal(game.rest(chicken).ok, false);
+  chicken.energy = 10;
+  assert.equal(game.canRest(chicken), true);
+  assert.equal(game.rest(chicken).ok, true);
+  assert.equal(chicken.energy, 35);
+});
+
+test('save and load round-trip, junk saves fall back safely', () => {
+  const g = game.createGame('Nugs');
+  game.train(g.chicken, 'run', seeded(2));
+  g.beaten = 3;
+  g.wins = 4;
+  const back = game.loadGame(game.saveGame(g));
+  assert.deepEqual(back.chicken, g.chicken);
+  assert.equal(back.beaten, 3);
+  assert.equal(back.wins, 4);
+  assert.equal(back.name, 'Nugs');
+
+  assert.equal(game.loadGame('not json'), null);
+  assert.equal(game.loadGame(null), null);
+  assert.equal(game.loadGame('{}'), null);
+  const bad = game.loadGame(JSON.stringify({ chicken: { coins: -50, energy: 900, atk: 'x' }, beaten: 99, name: '<b>' }));
+  assert.equal(bad.chicken.coins, 0);
+  assert.equal(bad.chicken.energy, 100);
+  assert.equal(bad.chicken.atk, 10);
+  assert.equal(bad.beaten, game.RIVALS.length);
+  assert.equal(bad.name, 'b');
+});
