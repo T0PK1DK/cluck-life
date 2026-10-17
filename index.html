@@ -92,6 +92,15 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
 .pts b { color:var(--gold); }
 .small-row { display:flex; gap:8px; margin-top:12px; }
 .small-row .btn { flex:1; min-height:42px; font-size:14px; }
+#muteBtn { background:var(--card); border-radius:999px; padding:6px 10px; font-size:14px; min-width:40px; min-height:32px; }
+#timing { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:flex-end; padding-bottom:16px; background:rgba(18,13,32,.25); cursor:pointer; touch-action:manipulation; user-select:none; -webkit-user-select:none; }
+#timing.on { display:flex; }
+#timing .tlabel { font-weight:900; font-size:15px; background:rgba(18,13,32,.82); padding:4px 12px; border-radius:10px; margin-bottom:6px; }
+#timing .track { position:relative; width:min(300px,82%); height:22px; border-radius:11px; background:linear-gradient(90deg,#ff5a5f 0%,#ff5a5f 30%,#ffc93c 30%,#ffc93c 43%,#4cd17b 43%,#4cd17b 57%,#ffc93c 57%,#ffc93c 70%,#ff5a5f 70%); box-shadow:0 0 0 3px #120d20, 0 4px 0 3px #120d20; }
+#timing .needle { position:absolute; top:-6px; width:6px; height:34px; margin-left:-3px; border-radius:3px; background:#fff; box-shadow:0 0 0 2px #120d20; left:0; }
+.champ-box { display:none; margin-top:10px; background:linear-gradient(135deg,#4a3a10,#2a2145); border:2px solid var(--gold); border-radius:14px; padding:10px; }
+.champ-box b { color:var(--gold); }
+.champ-box .btn { width:100%; margin-top:8px; background:var(--gold); color:#3a2300; box-shadow:0 4px 0 #a5781a; }
 #toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:#120d20; border:2px solid var(--gold); padding:10px 16px; border-radius:14px; font-weight:900; opacity:0; transition: all .25s; pointer-events:none; max-width:92vw; text-align:center; z-index:20; }
 #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
 </style>
@@ -103,6 +112,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
     <div class="chips">
       <div class="chip" id="lvlChip">Lv 1</div>
       <div class="chip coins" id="coinChip">🪙 100</div>
+      <button id="muteBtn" aria-label="Sound on or off" title="Sound">🔊</button>
     </div>
   </header>
 
@@ -112,6 +122,10 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
         <canvas id="stage" width="360" height="230" aria-label="Your chicken"></canvas>
         <div class="goal" id="goal">Goal: become champion</div>
         <button class="btn alt" id="skipBtn">Skip ⏩</button>
+        <div id="timing" role="button" aria-label="Tap when the needle is in the green">
+          <div class="tlabel" id="timingLabel">Tap in the green!</div>
+          <div class="track"><div class="needle" id="needle"></div></div>
+        </div>
       </div>
       <div class="bars">
         <div class="barbox">⚡ Energy <span id="energyTxt">100/100</span><div class="bar"><i id="energyFill" style="width:100%"></i></div></div>
@@ -136,7 +150,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
           <button class="btn alt duo" id="feedBtn">🌽 Feed<small>15🪙 → +50⚡</small></button>
           <button class="btn alt duo" id="napBtn">💤 Nap<small>free, +25⚡</small></button>
         </div>
-        <p class="hint">Each session costs 12⚡ and gives XP. Peck = attack, Run = speed (strike first, dodge more), Dodge = defense. Nap is free but only when you're too tired to fight.</p>
+        <p class="hint">Each session costs 12⚡ and gives XP. Tap when the needle hits the green for a Perfect (1.5× gains). Red is a miss (smaller gains). Peck = attack, Run = speed (strike first, dodge more), Dodge = defense. Nap is free but only when you're too tired to fight.</p>
       </div>
 
       <div class="pane" id="pane-fight">
@@ -153,6 +167,10 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
         <div class="bets" id="bets"><span class="lbl">Bet</span></div>
         <button class="btn go" id="fightBtn">FIGHT! (20⚡)</button>
         <div class="rematch" id="rematch"></div>
+        <div class="champ-box" id="champBox">
+          <div>👑 You're the champion! Ready for a tougher crown? <b id="champNext">Tier ★</b> brings back all 8 rivals, stronger, with bigger purses. You keep your chicken, coins and record.</div>
+          <button class="btn" id="promoteBtn">Go for the next crown</button>
+        </div>
         <p class="hint" id="fightHint">Win: your bet back ×2 plus the purse. Lose: you lose the bet. Beaten rivals can be rematched for a smaller purse.</p>
       </div>
 
@@ -191,7 +209,68 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
   let bet = 10;
   let rematchIdx = null; // null = next rival on the ladder
   let fighting = null;
+  function ladder() { return CL.rivalsForTier(game.tier); }
+  function stars(t) { return t > 0 ? ' ' + '★'.repeat(Math.min(t, 3)) + (t > 3 ? t : '') : ''; }
   function save() { try { localStorage.setItem(SAVE_KEY, CL.saveGame(game)); } catch (e) {} }
+
+  // ---------- sound (Web Audio, made in code, no files) ----------
+  const MUTE_KEY = 'cluck-life-muted';
+  const sfx = (function () {
+    let ac = null;
+    let muted = false;
+    try { muted = localStorage.getItem(MUTE_KEY) === '1'; } catch (e) {}
+    function ctx() {
+      if (muted) return null;
+      try {
+        if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+        if (ac.state === 'suspended') ac.resume();
+      } catch (e) { ac = null; }
+      return ac;
+    }
+    function tone(freq, dur, type, vol, slideTo, delay) {
+      const a = ctx(); if (!a) return;
+      const t = a.currentTime + (delay || 0);
+      const o = a.createOscillator(), g = a.createGain();
+      o.type = type || 'square';
+      o.frequency.setValueAtTime(freq, t);
+      if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+      g.gain.setValueAtTime(vol || 0.08, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(a.destination);
+      o.start(t); o.stop(t + dur + 0.02);
+    }
+    function noise(dur, vol, hp) {
+      const a = ctx(); if (!a) return;
+      const n = Math.floor(a.sampleRate * dur);
+      const buf = a.createBuffer(1, n, a.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      const s = a.createBufferSource(), g = a.createGain(), f = a.createBiquadFilter();
+      f.type = 'highpass'; f.frequency.value = hp || 800;
+      s.buffer = buf; g.gain.value = vol || 0.12;
+      s.connect(f); f.connect(g); g.connect(a.destination); s.start();
+    }
+    return {
+      get muted() { return muted; },
+      setMuted(m) { muted = !!m; try { localStorage.setItem(MUTE_KEY, muted ? '1' : '0'); } catch (e) {} if (!muted) ctx(); },
+      tap() { tone(660, 0.05, 'square', 0.04); },
+      cluck() { tone(520, 0.07, 'square', 0.06, 380); tone(700, 0.06, 'square', 0.05, 500, 0.08); },
+      perfect() { [660, 880, 1320].forEach((f, i) => tone(f, 0.09, 'triangle', 0.08, null, i * 0.06)); },
+      miss() { tone(220, 0.18, 'sawtooth', 0.05, 140); },
+      hit() { noise(0.08, 0.14, 1200); tone(160, 0.1, 'square', 0.07, 90); },
+      crit() { noise(0.14, 0.2, 600); tone(120, 0.18, 'sawtooth', 0.1, 60); },
+      dodge() { tone(400, 0.14, 'sine', 0.06, 1200); },
+      coin() { tone(988, 0.06, 'square', 0.05); tone(1319, 0.12, 'square', 0.05, null, 0.06); },
+      nap() { tone(330, 0.3, 'sine', 0.05, 220); },
+      bell() { tone(1046, 0.4, 'triangle', 0.07); tone(1568, 0.3, 'sine', 0.04); },
+      level() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.12, 'square', 0.06, null, i * 0.08)); },
+      win() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => tone(f, 0.13, 'square', 0.06, null, i * 0.1)); },
+      lose() { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.2, 'triangle', 0.07, null, i * 0.16)); },
+    };
+  })();
+  function paintMute() { $('muteBtn').textContent = sfx.muted ? '🔇' : '🔊'; $('muteBtn').setAttribute('aria-pressed', sfx.muted ? 'true' : 'false'); }
+  paintMute();
+  $('muteBtn').addEventListener('click', () => { sfx.setMuted(!sfx.muted); paintMute(); if (!sfx.muted) sfx.tap(); });
 
   // ---------- canvas ----------
   const cv = $('stage');
@@ -449,12 +528,14 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
         f.impact = true;
         const defSide = beat.who === 'you' ? 'foe' : 'you';
         if (beat.kind === 'dodge') {
+          sfx.dodge();
           floatText(def.x, GROUND - 78, 'DODGE!', '#6fd3ff', 16);
         } else {
           def.flash = 1;
           scene.hpTarget.you = beat.youHp / f.maxYou;
           scene.hpTarget.foe = beat.foeHp / f.maxFoe;
           const crit = beat.kind === 'crit';
+          if (crit) sfx.crit(); else sfx.hit();
           floatText(def.x, GROUND - 74, (crit ? 'CRIT ' : '-') + beat.dmg, crit ? '#ffd34d' : '#ffffff', crit ? 22 : 17);
           burst(def.x, GROUND - 34, defSide === 'you' ? '#ffffff' : foe.def.color, crit ? 14 : 7);
           scene.shake = crit ? 0.35 : 0.15;
@@ -479,10 +560,12 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
     scene.hpTarget.you = r.pHp / f.maxYou; scene.hpTarget.foe = r.aHp / f.maxFoe;
     scene.me.x = 100; scene.foe.x = 260; scene.me.hop = scene.foe.hop = 0;
     if (r.won) {
-      scene.banner = { text: r.newChampion ? 'CHAMPION! 👑' : 'VICTORY!', sub: '+' + r.reward + ' coins' + (r.unlocked ? ' · ' + r.unlocked + ' unlocked' : ''), t: 0, good: true, tap: true };
+      scene.banner = { text: r.newChampion ? 'CHAMPION! 👑' : 'VICTORY!', sub: '+' + r.reward + ' coins · +' + r.xp + ' XP' + (r.unlocked ? ' · ' + r.unlocked + ' unlocked' : ''), t: 0, good: true, tap: true };
+      sfx.win();
       for (let i = 0; i < 4; i++) burst(60 + Math.random() * 240, 60, ['#ffd34d', '#ff7bd5', '#6fd3ff', '#4cd17b'][i], 12);
     } else {
-      scene.banner = { text: 'DEFEAT', sub: 'Lost ' + r.bet + ' coins · train and try again', t: 0, good: false, tap: true };
+      scene.banner = { text: 'DEFEAT', sub: 'Lost ' + r.bet + ' coins · +' + r.xp + ' XP · train and try again', t: 0, good: false, tap: true };
+      sfx.lose();
     }
     $('skipBtn').style.display = 'none';
     f.done = true;
@@ -561,8 +644,9 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
   function lockUI() { updateUI(); }
 
   function currentFoe() {
-    const idx = rematchIdx == null ? Math.min(game.beaten, CL.RIVALS.length - 1) : rematchIdx;
-    return { idx, foe: CL.RIVALS[idx], rematch: idx < game.beaten };
+    const L = ladder();
+    const idx = rematchIdx == null ? Math.min(game.beaten, L.length - 1) : rematchIdx;
+    return { idx, foe: L[idx], rematch: idx < game.beaten };
   }
 
   let oddsCache = { key: '', p: 0 };
@@ -625,7 +709,8 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
     $('xpTxt').textContent = c.xp + '/' + c.xpNeed;
     $('xpFill').style.width = Math.min(100, c.xp / c.xpNeed * 100) + '%';
     const champ = game.beaten >= CL.RIVALS.length;
-    $('goal').innerHTML = champ ? '👑 <b>Champion</b> · ' + game.name : 'Goal: beat <b>' + CL.RIVALS[CL.RIVALS.length - 1].name + '</b> · rival ' + (game.beaten + 1) + '/' + CL.RIVALS.length;
+    const L = ladder();
+    $('goal').innerHTML = (champ ? '👑 <b>Champion' + stars(game.tier) + '</b> · ' + game.name : 'Goal: beat <b>' + L[L.length - 1].name + '</b> · rival ' + (game.beaten + 1) + '/' + L.length);
 
     $('tAtk').textContent = 'ATK ' + fmt(c.atk);
     $('tSpd').textContent = 'SPD ' + fmt(c.spd);
@@ -637,7 +722,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
 
     // fight pane
     const { idx, foe, rematch } = currentFoe();
-    $('ladder').innerHTML = CL.RIVALS.map((r, i) => '<i class="' + (i < game.beaten ? 'done' : i === game.beaten ? 'now' : '') + '" title="' + r.name + '"></i>').join('');
+    $('ladder').innerHTML = L.map((r, i) => '<i class="' + (i < game.beaten ? 'done' : i === game.beaten ? 'now' : '') + '" title="' + r.name + '"></i>').join('');
     $('rivalName').textContent = foe.name + (rematch ? ' (rematch)' : '');
     $('rivalSub').textContent = 'Rival ' + (idx + 1) + ' of ' + CL.RIVALS.length + ' · purse ' + (rematch ? Math.floor(foe.purse / 4) : foe.purse) + '🪙';
     const rows = [['❤️ HP', c.hp, foe.hp], ['🥊 ATK', c.atk, foe.atk], ['🛡️ DEF', c.def, foe.def], ['💨 SPD', c.spd, foe.spd]];
@@ -654,13 +739,16 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
     rm.innerHTML = '';
     if (game.beaten > 0) {
       const mk = (label, val) => { const b = document.createElement('button'); b.textContent = label; if (rematchIdx === val) b.classList.add('on'); b.disabled = lock; b.onclick = () => { rematchIdx = val; updateUI(); }; rm.appendChild(b); };
-      if (!champ) mk('Next: ' + CL.RIVALS[game.beaten].name, null);
-      for (let i = 0; i < Math.min(game.beaten, CL.RIVALS.length); i++) {
-        if (champ && i === CL.RIVALS.length - 1 && rematchIdx == null) continue;
-        mk('Rematch ' + CL.RIVALS[i].name, i);
+      if (!champ) mk('Next: ' + L[game.beaten].name, null);
+      for (let i = 0; i < Math.min(game.beaten, L.length); i++) {
+        if (champ && i === L.length - 1 && rematchIdx == null) continue;
+        mk('Rematch ' + L[i].name, i);
       }
     }
     drawRivalPic(foe);
+    $('champBox').style.display = CL.canPromote(game) ? 'block' : 'none';
+    $('champNext').textContent = 'Tier' + stars(game.tier + 1);
+    $('promoteBtn').disabled = lock;
 
     // chicken pane
     $('sHp').textContent = fmt(c.hp);
@@ -688,30 +776,72 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
       floatText(scene.me.x, GROUND - 92, 'LEVEL ' + levels[levels.length - 1] + '!', '#ffd34d', 22);
       burst(scene.me.x, GROUND - 40, '#ffd34d', 16);
       toast('⭐ Level up! +3 points, +15 health');
+      sfx.level();
     }
   }
 
   const STAT_NAME = { atk: 'ATK', def: 'DEF', spd: 'SPD' };
-  document.querySelectorAll('[data-train]').forEach((b) => b.addEventListener('click', () => {
-    const r = CL.train(game.chicken, b.dataset.train);
-    if (!r.ok) { toast(r.reason); return; }
-    playTrain(b.dataset.train);
+  // ---------- tap-timing training ----------
+  const TIMING_SPEED = 1.15; // full sweeps per second
+  const TIMING_LIMIT = 3.2; // seconds before it counts as a miss
+  let timing = null;
+  function openTiming(type) {
+    if (timing || fighting) return;
+    if (!CL.canTrain(game.chicken)) { toast('Need more energy!'); return; }
+    sfx.tap();
+    timing = { type, t0: performance.now(), pos: 0 };
+    $('timingLabel').textContent = { peck: '🥊 Peck', run: '💨 Run', dodge: '🛡️ Dodge' }[type] + ': tap in the green!';
+    $('timing').classList.add('on');
+    document.querySelectorAll('[data-train]').forEach((x) => { x.disabled = true; });
+    if (window.innerWidth < 860) document.querySelector('.stage').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    requestAnimationFrame(stepTiming);
+  }
+  function stepTiming(now) {
+    if (!timing) return;
+    const el = (now - timing.t0) / 1000;
+    const ph = (el * TIMING_SPEED) % 2;
+    timing.pos = ph < 1 ? ph : 2 - ph;
+    $('needle').style.left = (timing.pos * 100) + '%';
+    if (el > TIMING_LIMIT) { closeTiming('miss'); return; }
+    requestAnimationFrame(stepTiming);
+  }
+  function closeTiming(forced) {
+    if (!timing) return;
+    const t = timing; timing = null;
+    $('timing').classList.remove('on');
+    const grade = forced || CL.gradeTap(t.pos);
+    doTrain(t.type, grade);
+  }
+  function doTrain(type, grade) {
+    const r = CL.train(game.chicken, type, undefined, grade);
+    if (!r.ok) { toast(r.reason); updateUI(); return; }
+    playTrain(type);
+    const gw = { perfect: ['PERFECT!', '#ffd34d'], good: ['GOOD', '#ffffff'], miss: ['MISS', '#ff8a8e'] }[r.quality];
+    floatText(scene.me.x, GROUND - 98, gw[0], gw[1], r.quality === 'perfect' ? 22 : 16);
     floatText(scene.me.x, GROUND - 74, '+' + r.bonus.toFixed(1) + ' ' + STAT_NAME[r.stat], '#4cd17b', 17);
     floatText(scene.me.x + 40, GROUND - 56, '+' + r.xp + ' XP', '#d9b8ff', 13);
+    if (r.quality === 'perfect') { sfx.perfect(); burst(scene.me.x, GROUND - 60, '#ffd34d', 10); }
+    else if (r.quality === 'miss') sfx.miss();
+    else sfx.cluck();
     afterLevels(r.levels);
     save(); updateUI();
-  }));
+  }
+  $('timing').addEventListener('pointerdown', (e) => { e.preventDefault(); closeTiming(); });
+  document.addEventListener('keydown', (e) => {
+    if (timing && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); closeTiming(); }
+  });
+  document.querySelectorAll('[data-train]').forEach((b) => b.addEventListener('click', () => openTiming(b.dataset.train)));
   $('feedBtn').addEventListener('click', () => {
     const r = CL.feed(game.chicken);
     if (!r.ok) { toast(r.reason); return; }
-    scene.me.anim = 'eat'; scene.me.animT = 0;
+    scene.me.anim = 'eat'; scene.me.animT = 0; sfx.coin();
     floatText(290, GROUND - 70, '+50 ⚡', '#6fd3ff', 17);
     save(); updateUI();
   });
   $('napBtn').addEventListener('click', () => {
     const r = CL.rest(game.chicken);
     if (!r.ok) { toast(r.reason); return; }
-    scene.me.anim = 'nap'; scene.me.animT = 0;
+    scene.me.anim = 'nap'; scene.me.animT = 0; sfx.nap();
     floatText(scene.me.x, GROUND - 74, '+' + r.energy + ' ⚡', '#6fd3ff', 17);
     if (r.coins) toast('Found ' + r.coins + ' coins in the hay');
     save(); updateUI();
@@ -719,7 +849,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
   document.querySelectorAll('.plus').forEach((b) => b.addEventListener('click', () => {
     const r = CL.addPoint(game.chicken, b.dataset.stat);
     if (!r.ok) { toast(r.reason); return; }
-    floatText(scene.me.x, GROUND - 74, '+1 ' + STAT_NAME[b.dataset.stat], '#4cd17b', 16);
+    floatText(scene.me.x, GROUND - 74, '+1 ' + STAT_NAME[b.dataset.stat], '#4cd17b', 16); sfx.tap();
     save(); updateUI();
   }));
   $('fightBtn').addEventListener('click', () => {
@@ -728,6 +858,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
     if (!r.ok) { toast(r.reason); return; }
     if (r.won && !r.rematch) rematchIdx = null;
     save();
+    sfx.bell();
     startFight(r);
     if (window.innerWidth < 860) document.querySelector('.stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
@@ -742,12 +873,20 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
     toast('A new chick hatched 🐣');
   });
 
+  $('promoteBtn').addEventListener('click', () => {
+    if (fighting) return;
+    const r = CL.promote(game);
+    if (!r.ok) { toast(r.reason); return; }
+    rematchIdx = null; save(); updateUI(); sfx.level();
+    toast('👑 Tier' + stars(r.tier) + ' started! The rivals got tougher. Train up.');
+  });
+
   updateUI();
   if (isNew) setTimeout(() => toast('Train up, then beat 8 rivals to become champion. Start with Pip!'), 400);
   save();
 
   // test hook for screenshots
-  window.__cluck = { game: () => game, scene, fighting: () => fighting };
+  window.__cluck = { game: () => game, scene, fighting: () => fighting, timing: () => timing };
 })();
 </script>
 </body>
