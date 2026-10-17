@@ -2,21 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Cluck Life - Prototype v2</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%F0%9F%90%94%3C/text%3E%3C/svg%3E">
 <style>
 * { box-sizing: border-box; }
-body { margin: 0; background: #0f0f1a; color: #eee; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 10px; }
+html, body { max-width: 100%; }
+body { margin: 0; background: #0f0f1a; color: #eee; font-family: system-ui, sans-serif; display: flex; flex-direction: column; align-items: center; padding: 10px; overflow-x: hidden; }
 h1 { color: #ff6b6b; margin: 10px 0; }
 #ui { display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; width: 100%; max-width: 1100px; }
-.panel { background: #1a1a2e; padding: 12px; border-radius: 8px; min-width: 220px; }
-canvas { border: 2px solid #333; background: #87CEEB; }
-button { background: #e94560; color: white; border: none; padding: 8px 12px; margin: 4px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+.panel { background: #1a1a2e; padding: 12px; border-radius: 8px; min-width: 0; flex: 1 1 220px; max-width: 100%; }
+canvas { border: 2px solid #333; background: #87CEEB; width: 100%; max-width: 320px; height: auto; display: block; margin: 0 auto; }
+button { background: #e94560; color: white; border: none; padding: 10px 14px; margin: 4px; border-radius: 5px; cursor: pointer; font-weight: bold; min-height: 44px; touch-action: manipulation; }
 button:hover { background: #ff6b6b; }
-button:disabled { background: #444; }
+button:disabled { background: #444; cursor: not-allowed; }
 .stat-row { display: flex; justify-content: space-between; margin: 4px 0; }
 .bar { height: 10px; background: #333; border-radius: 5px; overflow: hidden; margin: 2px 0; }
 .bar-fill { height: 100%; background: #4CAF50; }
 #log { height: 80px; overflow-y: auto; background: #000; padding: 5px; font-size: 12px; border-radius: 4px; }
+#status { min-height: 1.2em; margin-top: 6px; }
+input[type="number"] { width: 70px; margin: 5px; font-size: 16px; min-height: 44px; padding: 6px; }
+@media (max-width: 500px) {
+  #ui { flex-direction: column; align-items: stretch; }
+  .panel { flex: 1 1 auto; }
+  .panel-actions { order: 1; }
+  .panel-arena { order: 2; }
+  .panel-stats { order: 3; }
+}
 </style>
 </head>
 <body>
@@ -24,7 +36,7 @@ button:disabled { background: #444; }
 <p>Raise • Train • Allocate • Fight • Bet</p>
 
 <div id="ui">
-  <div class="panel">
+  <div class="panel panel-stats">
     <h3>Chicken Stats</h3>
     <div class="stat-row"><span>Level</span> <b id="level">1</b></div>
     <div class="stat-row"><span>XP</span> <b id="xp">0</b>/<span id="xpNeed">100</span></div>
@@ -37,42 +49,92 @@ button:disabled { background: #444; }
     <div class="stat-row"><span>Defense</span> <b id="def">5</b></div>
     <div class="stat-row"><span>Speed</span> <b id="spd">5</b></div>
     <div class="stat-row"><span>Points</span> <b id="points">0</b></div>
-    <button onclick="addPoint('atk')">+ Atk</button>
-    <button onclick="addPoint('def')">+ Def</button>
-    <button onclick="addPoint('spd')">+ Spd</button>
+    <button id="btnAtk" onclick="spendPoint('atk')">+ Atk</button>
+    <button id="btnDef" onclick="spendPoint('def')">+ Def</button>
+    <button id="btnSpd" onclick="spendPoint('spd')">+ Spd</button>
   </div>
 
-  <div class="panel">
+  <div class="panel panel-arena">
     <canvas id="arena" width="320" height="200"></canvas>
     <div id="log"></div>
   </div>
 
-  <div class="panel">
+  <div class="panel panel-actions">
     <h3>Actions</h3>
-    <button onclick="feed()">Feed (15 coins)</button><br>
-    <button onclick="startTrain('peck')">Train Peck</button>
-    <button onclick="startTrain('run')">Train Run</button>
-    <button onclick="startTrain('dodge')">Train Dodge</button><br>
+    <button id="btnFeed" onclick="doFeed()">Feed (15 coins)</button><br>
+    <button id="btnTrainPeck" onclick="doTrain('peck')">Train Peck</button>
+    <button id="btnTrainRun" onclick="doTrain('run')">Train Run</button>
+    <button id="btnTrainDodge" onclick="doTrain('dodge')">Train Dodge</button><br>
+    <button id="btnRest" onclick="doRest()">Rest (free energy)</button>
     <hr>
-    <button onclick="startFight()">Fight AI (bet)</button>
-    <input type="number" id="betAmount" value="20" min="5" style="width:70px; margin:5px;"> coins
+    <button id="btnFight" onclick="doFight()">Fight AI (bet)</button>
+    <input type="number" id="betAmount" value="20" min="5" step="1"> coins
     <div id="status"></div>
   </div>
 </div>
 
+<script src="game.js"></script>
 <script>
-let chicken = {
-  level: 1, xp: 0, xpNeed: 100, coins: 100, energy: 100,
-  hp: 100, atk: 10, def: 5, spd: 5, points: 0
-};
+const { createChicken, feed, train, rest, fight, addPoint, parseBet, actionAvailability } = CluckLife;
+
+let chicken = createChicken();
+let lastBanner = 'READY';
 
 const canvas = document.getElementById('arena');
 const ctx = canvas.getContext('2d');
 const logEl = document.getElementById('log');
+const betInput = document.getElementById('betAmount');
 
 function log(msg) {
   logEl.innerHTML += msg + '<br>';
   logEl.scrollTop = logEl.scrollHeight;
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function drawChicken(x, y, color, facing) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (facing < 0) ctx.scale(-1, 1);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 28, 22, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'red';
+  ctx.beginPath();
+  ctx.moveTo(-8, -18); ctx.lineTo(0, -32); ctx.lineTo(8, -18); ctx.fill();
+  ctx.fillStyle = 'orange';
+  ctx.beginPath();
+  ctx.moveTo(22, -4); ctx.lineTo(34, 0); ctx.lineTo(22, 4); ctx.fill();
+  ctx.fillStyle = 'black';
+  ctx.beginPath(); ctx.arc(12, -6, 3, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'yellow'; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(-8, 18); ctx.lineTo(-8, 32); ctx.moveTo(8, 18); ctx.lineTo(8, 32); ctx.stroke();
+  ctx.restore();
+}
+
+function drawYard(banner) {
+  lastBanner = banner;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#6fbf4a';
+  ctx.fillRect(0, 150, canvas.width, 50);
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath(); ctx.ellipse(70, 48, 28, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(250, 36, 36, 14, 0, 0, Math.PI * 2); ctx.fill();
+  drawChicken(80, 120, '#fff', 1);
+  if (banner === 'VICTORY!' || banner === 'DEFEAT') {
+    drawChicken(240, 120, '#c85a17', -1);
+  }
+  ctx.fillStyle = '#1a1a2e';
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(banner, canvas.width / 2, 28);
+}
+
+function currentBet() {
+  return parseBet(betInput.value);
 }
 
 function updateUI() {
@@ -88,135 +150,105 @@ function updateUI() {
   document.getElementById('points').textContent = chicken.points;
   document.getElementById('xpBar').style.width = (chicken.xp / chicken.xpNeed * 100) + '%';
   document.getElementById('energyBar').style.width = chicken.energy + '%';
+
+  const bet = currentBet();
+  const ready = actionAvailability(chicken, bet.ok ? bet.bet : 0);
+  document.getElementById('btnFeed').disabled = !ready.feed;
+  document.getElementById('btnTrainPeck').disabled = !ready.train;
+  document.getElementById('btnTrainRun').disabled = !ready.train;
+  document.getElementById('btnTrainDodge').disabled = !ready.train;
+  document.getElementById('btnRest').disabled = !ready.rest;
+  document.getElementById('btnFight').disabled = !ready.fight;
+  document.getElementById('btnAtk').disabled = !ready.points;
+  document.getElementById('btnDef').disabled = !ready.points;
+  document.getElementById('btnSpd').disabled = !ready.points;
 }
 
-function gainXP(n) {
-  chicken.xp += n;
-  while (chicken.xp >= chicken.xpNeed) {
-    chicken.xp -= chicken.xpNeed;
-    chicken.level++;
-    chicken.points += 3;
-    chicken.hp += 15;
-    chicken.xpNeed = Math.floor(chicken.xpNeed * 1.35);
-    log(`Level up! Now level ${chicken.level}`);
-  }
-  updateUI();
+function noteLevels(levels) {
+  levels.forEach(function (lvl) {
+    log('Level up! Now level ' + lvl);
+  });
 }
 
-function addPoint(stat) {
-  if (chicken.points <= 0) return;
-  chicken.points--;
-  chicken[stat] += 1;
-  updateUI();
-}
-
-function feed() {
-  if (chicken.coins < 15 || chicken.energy >= 100) {
-    document.getElementById('status').textContent = 'Can\'t feed right now';
+function spendPoint(stat) {
+  const result = addPoint(chicken, stat);
+  if (!result.ok) {
+    setStatus(result.reason);
     return;
   }
-  chicken.coins -= 15;
-  chicken.energy = Math.min(100, chicken.energy + 50);
-  updateUI();
-  log('Fed chicken. Energy restored.');
-}
-
-function startTrain(type) {
-  if (chicken.energy < 12) {
-    document.getElementById('status').textContent = 'Need more energy!';
-    return;
-  }
-  chicken.energy -= 12;
-  let bonus = 0.8 + Math.random() * 0.6;
-  if (type === 'peck') chicken.atk += bonus;
-  if (type === 'run') chicken.spd += bonus;
-  if (type === 'dodge') chicken.def += bonus;
-  gainXP(20 + Math.floor(Math.random()*15));
-  log(`Trained ${type}!`);
+  setStatus('+' + stat.toUpperCase());
   updateUI();
 }
 
-function drawChicken(x, y, color, facing) {
-  ctx.save();
-  ctx.translate(x, y);
-  if (facing < 0) ctx.scale(-1, 1);
-  // body
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 28, 22, 0, 0, Math.PI*2);
-  ctx.fill();
-  // comb
-  ctx.fillStyle = 'red';
-  ctx.beginPath();
-  ctx.moveTo(-8, -18); ctx.lineTo(0, -32); ctx.lineTo(8, -18); ctx.fill();
-  // beak
-  ctx.fillStyle = 'orange';
-  ctx.beginPath();
-  ctx.moveTo(22, -4); ctx.lineTo(34, 0); ctx.lineTo(22, 4); ctx.fill();
-  // eye
-  ctx.fillStyle = 'black';
-  ctx.beginPath(); ctx.arc(12, -6, 3, 0, Math.PI*2); ctx.fill();
-  // legs
-  ctx.strokeStyle = 'yellow'; ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.moveTo(-8, 18); ctx.lineTo(-8, 32); ctx.moveTo(8, 18); ctx.lineTo(8, 32); ctx.stroke();
-  ctx.restore();
+function doFeed() {
+  const result = feed(chicken);
+  setStatus(result.ok ? result.message : result.reason);
+  if (result.ok) log(result.message);
+  updateUI();
 }
 
-function startFight() {
-  const bet = parseInt(document.getElementById('betAmount').value) || 20;
-  if (chicken.coins < bet || chicken.energy < 20) {
-    document.getElementById('status').textContent = 'Not enough coins or energy';
+function doTrain(type) {
+  const result = train(chicken, type);
+  if (!result.ok) {
+    setStatus(result.reason);
+    updateUI();
     return;
   }
-  chicken.coins -= bet;
-  chicken.energy -= 20;
+  log('Trained ' + type + '!');
+  noteLevels(result.levels);
+  setStatus('Trained ' + type);
+  updateUI();
+}
 
-  const ai = {
-    hp: 90 + chicken.level * 10,
-    atk: 9 + chicken.level * 1.5,
-    def: 5 + chicken.level * 0.6,
-    spd: 5 + chicken.level * 0.5
-  };
+function doRest() {
+  const result = rest(chicken);
+  if (!result.ok) {
+    setStatus(result.reason);
+    updateUI();
+    return;
+  }
+  let msg = 'Rested. +' + result.energy + ' energy';
+  if (result.coins) msg += ' and found ' + result.coins + ' coins';
+  log(msg + '.');
+  setStatus(msg);
+  drawYard('READY');
+  updateUI();
+}
 
-  let pHp = chicken.hp, aHp = ai.hp;
+function doFight() {
+  const parsed = currentBet();
+  if (!parsed.ok) {
+    setStatus(parsed.reason);
+    updateUI();
+    return;
+  }
+  const result = fight(chicken, parsed.bet);
+  if (!result.ok) {
+    setStatus(result.reason);
+    updateUI();
+    return;
+  }
   log('--- Fight Start ---');
-  let turns = 0;
-  while (pHp > 0 && aHp > 0 && turns < 30) {
-    turns++;
-    // player
-    let dmg = Math.max(1, (chicken.atk - ai.def * 0.4) * (0.8 + Math.random()*0.5));
-    aHp -= dmg;
-    log(`You hit for ${dmg.toFixed(0)}`);
-    if (aHp <= 0) break;
-    // ai
-    dmg = Math.max(1, (ai.atk - chicken.def * 0.4) * (0.8 + Math.random()*0.5));
-    pHp -= dmg;
-    log(`AI hits for ${dmg.toFixed(0)}`);
-  }
-
-  const won = pHp > 0;
-  if (won) {
-    const reward = Math.floor(bet * 1.8) + 25;
-    chicken.coins += reward;
-    gainXP(40 + chicken.level * 8);
-    log(`WIN! +${reward} coins`);
-    document.getElementById('status').textContent = `Victory! +${reward} coins`;
+  result.log.forEach(function (hit) {
+    log(hit.who === 'you' ? ('You hit for ' + hit.dmg.toFixed(0)) : ('AI hits for ' + hit.dmg.toFixed(0)));
+  });
+  noteLevels(result.levels);
+  if (result.won) {
+    log('WIN! +' + result.reward + ' coins');
+    setStatus('Victory! +' + result.reward + ' coins');
+    drawYard('VICTORY!');
   } else {
     log('Lost the fight...');
-    document.getElementById('status').textContent = 'Defeated. Train more!';
+    setStatus(chicken.coins <= 5 ? 'Defeated. Rest, then train more!' : 'Defeated. Train more!');
+    drawYard('DEFEAT');
   }
   updateUI();
-
-  // simple visual
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawChicken(80, 100, '#fff', 1);
-  drawChicken(240, 100, '#c85a17', -1);
-  ctx.fillStyle = '#000';
-  ctx.font = '16px sans-serif';
-  ctx.fillText(won ? 'VICTORY!' : 'DEFEAT', 120, 40);
 }
 
+betInput.addEventListener('input', updateUI);
+
 updateUI();
+drawYard('READY');
 log('Welcome to Cluck Life. Train, feed, and fight!');
 </script>
 </body>
