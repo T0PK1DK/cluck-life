@@ -17,4 +17,11 @@ Multiplayer cock fighting game inspired by **Duck Life** (raise & train) and **G
 - Rebirth system
 - Special abilities
 
-Open `index.html` in a browser to play the current prototype.
+Open `index.html` in a browser to play the current prototype, or run `npm start` and visit http://127.0.0.1:8765.
+
+```bash
+npm test    # node tests for betting, rest, and combat rules
+npm start   # static file server
+```
+
+No build step and no hosted deploy config (no Wrangler / Pages project). It is a static HTML + JS prototype.

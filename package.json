@@ -1,0 +1,9 @@
+{
+  "name": "cluck-life",
+  "private": true,
+  "description": "Raise, train, and fight your chicken in a tiny Duck Life-style prototype.",
+  "scripts": {
+    "start": "python3 -m http.server 8765",
+    "test": "node --test game.test.js"
+  }
+}
