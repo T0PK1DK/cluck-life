@@ -15,7 +15,6 @@ A phone-first raise-and-fight chicken game inspired by **Duck Life**. Train your
 ## Files
 - `game.js` – all game rules (pure functions, shared by the page and the tests)
 - `index.html` – UI, canvas yard/arena and fight animation
-- `gate.js` – preview passcode gate (stores only a salted hash)
 - `game.test.js` – node tests
 
 ```bash
