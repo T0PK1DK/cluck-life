@@ -214,3 +214,45 @@ test('save and load round-trip, junk saves fall back safely', () => {
   assert.equal(bad.beaten, game.RIVALS.length);
   assert.equal(bad.name, 'b');
 });
+
+test('tap timing: perfect beats good beats miss, default stays good', () => {
+  assert.equal(game.gradeTap(0.5), 'perfect');
+  assert.equal(game.gradeTap(0.62), 'good');
+  assert.equal(game.gradeTap(0.05), 'miss');
+  assert.equal(game.gradeTap('junk'), 'miss');
+  const gains = {};
+  for (const q of ['perfect', 'good', 'miss', undefined]) {
+    const c = game.createChicken();
+    const r = game.train(c, 'run', fixedRng([0.5, 0.5]), q);
+    gains[String(q)] = { spd: c.spd, xp: r.xp };
+  }
+  assert.ok(gains.perfect.spd > gains.good.spd && gains.good.spd > gains.miss.spd);
+  assert.ok(gains.perfect.xp > gains.good.xp && gains.good.xp > gains.miss.xp);
+  assert.deepEqual(gains.undefined, gains.good);
+});
+
+test('champion tiers: only after the crown, tougher rivals, bigger purses, saved', () => {
+  const g = game.createGame('Champ');
+  assert.equal(game.canPromote(g), false);
+  assert.equal(game.promote(g).ok, false);
+  g.beaten = game.RIVALS.length;
+  assert.equal(game.promote(g).ok, true);
+  assert.equal(g.tier, 1);
+  assert.equal(g.beaten, 0);
+  const t1 = game.rivalsForTier(1);
+  assert.equal(t1.length, game.RIVALS.length);
+  assert.ok(t1[0].hp > game.RIVALS[0].hp && t1[0].purse > game.RIVALS[0].purse);
+  assert.match(t1[0].name, /★/);
+  // the first tier-1 rival is tougher than the tier-0 one
+  Object.assign(g.chicken, { hp: 100, atk: 10, def: 5, spd: 5 });
+  let wins0 = 0, wins1 = 0;
+  for (let i = 0; i < 200; i++) {
+    if (game.simulate(g.chicken, game.RIVALS[0], seeded(i)).won) wins0++;
+    if (game.simulate(g.chicken, t1[0], seeded(i)).won) wins1++;
+  }
+  assert.ok(wins1 < wins0);
+  const back = game.loadGame(game.saveGame(g));
+  assert.equal(back.tier, 1);
+  assert.equal(game.loadGame(JSON.stringify({ chicken: {}, tier: 999 })).tier, game.MAX_TIER);
+  assert.equal(game.loadGame(JSON.stringify({ chicken: {} })).tier, 0);
+});

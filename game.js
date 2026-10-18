@@ -15,6 +15,9 @@
   const MAX_ROUNDS = 40;
   const SAVE_VERSION = 1;
   const TRAIN_TYPES = { peck: 'atk', run: 'spd', dodge: 'def' };
+  // Tap-timing training: how well you timed the tap scales the gain.
+  const TRAIN_QUALITY = { perfect: 1.5, good: 1, miss: 0.6 };
+  const MAX_TIER = 20;
 
   // The rival ladder. Beat each one to unlock the next. Stats are fixed, so
   // the only way up is to train and level your own chicken (no shortcuts).
@@ -50,6 +53,7 @@
       name: cleanName(name),
       chicken: createChicken(),
       beaten: 0, // how many rivals on the ladder you have beaten
+      tier: 0, // champion tier: 0 = first ladder, +1 each time you go for a new crown
       wins: 0,
       losses: 0,
     };
@@ -108,17 +112,28 @@
     return chicken.energy >= TRAIN_ENERGY;
   }
 
-  function train(chicken, type, rng) {
+  // Grade a tap on the timing bar. pos is where the marker was (0..1).
+  // The sweet spot sits in the middle of the bar.
+  function gradeTap(pos) {
+    const d = Math.abs(Number(pos) - 0.5);
+    if (!Number.isFinite(d)) return 'miss';
+    if (d <= 0.07) return 'perfect';
+    if (d <= 0.2) return 'good';
+    return 'miss';
+  }
+
+  function train(chicken, type, rng, quality) {
     const roll = rng || Math.random;
+    const q = TRAIN_QUALITY[quality] || 1;
     if (!TRAIN_TYPES[type]) return { ok: false, reason: 'Unknown training' };
     if (chicken.energy < TRAIN_ENERGY) return { ok: false, reason: 'Need more energy!' };
     chicken.energy -= TRAIN_ENERGY;
-    const bonus = 0.8 + roll() * 0.6;
+    const bonus = Math.round((0.8 + roll() * 0.6) * q * 10) / 10;
     const stat = TRAIN_TYPES[type];
     chicken[stat] = Math.round((chicken[stat] + bonus) * 10) / 10;
-    const xp = 20 + Math.floor(roll() * 15);
+    const xp = Math.round((20 + Math.floor(roll() * 15)) * q);
     const levels = gainXP(chicken, xp);
-    return { ok: true, type: type, stat: stat, bonus: bonus, xp: xp, levels: levels };
+    return { ok: true, type: type, stat: stat, bonus: bonus, xp: xp, levels: levels, quality: TRAIN_QUALITY[quality] ? quality : 'good' };
   }
 
   // Napping is the free fallback: only when you are too tired to fight,
@@ -145,6 +160,39 @@
 
   function rivalFor(beaten) {
     return RIVALS[Math.max(0, Math.min(RIVALS.length - 1, beaten | 0))];
+  }
+
+  // Champion tiers: after you win the crown you can start a tougher ladder.
+  // Same rivals, every stat and purse scaled up. Fixed numbers, so the
+  // only way through is more training (no shortcuts).
+  function tierScale(tier) {
+    const t = Math.max(0, Math.min(MAX_TIER, tier | 0));
+    return { stat: 1 + t * 0.45, purse: 1 + t * 0.6 };
+  }
+  function rivalsForTier(tier) {
+    const t = Math.max(0, Math.min(MAX_TIER, tier | 0));
+    if (t === 0) return RIVALS;
+    const k = tierScale(t);
+    return RIVALS.map(function (r) {
+      return {
+        name: r.name + ' ' + '★'.repeat(Math.min(t, 3)) + (t > 3 ? t : ''),
+        color: r.color, comb: r.comb,
+        hp: Math.round(r.hp * k.stat), atk: Math.round(r.atk * k.stat),
+        def: Math.round(r.def * k.stat), spd: Math.round(r.spd * k.stat),
+        purse: Math.round(r.purse * k.purse),
+      };
+    });
+  }
+  function canPromote(game) {
+    return game.beaten >= RIVALS.length && (game.tier | 0) < MAX_TIER;
+  }
+  // Start the next champion tier: the ladder resets with tougher rivals.
+  // You keep your chicken, coins and record.
+  function promote(game) {
+    if (!canPromote(game)) return { ok: false, reason: 'Beat the whole ladder first' };
+    game.tier = (game.tier | 0) + 1;
+    game.beaten = 0;
+    return { ok: true, tier: game.tier };
   }
 
   // Dodge chance grows when the defender is faster than the attacker.
@@ -219,14 +267,16 @@
     const sim = simulate(chicken, foe, roll);
     let reward = 0;
     let levels = [];
+    let xp = 10;
     if (sim.won) {
       // Bet comes back doubled, plus the rival's purse (a quarter on rematches).
       const purse = isRematch ? Math.floor(foe.purse / 4) : foe.purse;
       reward = parsed.bet * 2 + purse;
       chicken.coins += reward;
-      levels = gainXP(chicken, (isRematch ? 15 : 40) + Math.floor(foe.hp / 5));
+      xp = (isRematch ? 15 : 40) + Math.floor(foe.hp / 5);
+      levels = gainXP(chicken, xp);
     } else {
-      levels = gainXP(chicken, 10);
+      levels = gainXP(chicken, xp);
       if (chicken.coins < SCRAP_COINS) chicken.coins = SCRAP_COINS;
     }
 
@@ -241,6 +291,7 @@
       aHp: sim.foeHp,
       log: sim.beats,
       levels: levels,
+      xp: xp,
       foe: foe,
     };
   }
@@ -251,7 +302,8 @@
     const idx = index == null ? top : index | 0;
     if (idx < 0 || idx > top) return { ok: false, reason: 'That rival is locked' };
     const rematch = idx < game.beaten;
-    const result = fight(game.chicken, rawBet, rng, RIVALS[idx], rematch);
+    const ladder = rivalsForTier(game.tier);
+    const result = fight(game.chicken, rawBet, rng, ladder[idx], rematch);
     if (!result.ok) return result;
     result.rivalIndex = idx;
     result.rematch = rematch;
@@ -260,7 +312,7 @@
       game.wins += 1;
       if (!rematch && idx === game.beaten) {
         game.beaten = Math.min(RIVALS.length, game.beaten + 1);
-        result.unlocked = game.beaten < RIVALS.length ? RIVALS[game.beaten].name : null;
+        result.unlocked = game.beaten < RIVALS.length ? ladder[game.beaten].name : null;
         result.newChampion = game.beaten === RIVALS.length;
       }
     } else {
@@ -311,6 +363,7 @@
       points: Math.floor(num(c.points, d.points, 0, 1e6)),
     };
     base.beaten = Math.floor(num(data.beaten, 0, 0, RIVALS.length));
+    base.tier = Math.floor(num(data.tier, 0, 0, MAX_TIER));
     base.wins = Math.floor(num(data.wins, 0, 0, 1e9));
     base.losses = Math.floor(num(data.losses, 0, 0, 1e9));
     return base;
@@ -322,6 +375,7 @@
       name: game.name,
       chicken: game.chicken,
       beaten: game.beaten,
+      tier: game.tier | 0,
       wins: game.wins,
       losses: game.losses,
     });
@@ -335,6 +389,13 @@
     REST_ENERGY: REST_ENERGY,
     SCRAP_COINS: SCRAP_COINS,
     TRAIN_TYPES: TRAIN_TYPES,
+    TRAIN_QUALITY: TRAIN_QUALITY,
+    MAX_TIER: MAX_TIER,
+    gradeTap: gradeTap,
+    tierScale: tierScale,
+    rivalsForTier: rivalsForTier,
+    canPromote: canPromote,
+    promote: promote,
     RIVALS: RIVALS,
     createChicken: createChicken,
     createGame: createGame,
