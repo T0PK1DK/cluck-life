@@ -6,18 +6,11 @@
 <meta name="theme-color" content="#1d1630">
 <title>Cluck Life</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ctext y='52' font-size='52'%3E%F0%9F%90%94%3C/text%3E%3C/svg%3E">
-<script src="gate.js"></script>
 <style>
 :root { --bg:#1d1630; --card:#2a2145; --card2:#352a57; --ink:#fff7e8; --dim:#b9add6; --red:#ff5a5f; --gold:#ffc93c; --green:#4cd17b; --blue:#4aa8ff; --purple:#a77bff; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin:0; background: var(--bg); color: var(--ink); font-family: ui-rounded, "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif; }
 body { min-height: 100vh; padding: max(8px, env(safe-area-inset-top)) 10px 18px; overflow-x: hidden; }
-html.locked #app { display:none; }
-#gate { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--bg); z-index:50; }
-#gate form { background:var(--card); padding:24px; border-radius:18px; width:min(320px,90vw); text-align:center; }
-#gate .logo { font-size:26px; font-weight:900; color:var(--gold); }
-#gate input { width:100%; font-size:18px; padding:12px; border-radius:12px; border:2px solid var(--card2); background:#120d20; color:var(--ink); margin:10px 0; }
-#gate .err { color:var(--red); min-height:1.2em; margin-top:6px; }
 #app { max-width: 1060px; margin: 0 auto; }
 header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
 .brand { font-weight:900; font-size:20px; letter-spacing:.5px; color:var(--gold); text-shadow:0 2px 0 #b8501f; white-space:nowrap; }

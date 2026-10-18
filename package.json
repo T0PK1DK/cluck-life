@@ -5,6 +5,6 @@
   "scripts": {
     "start": "python3 -m http.server 8765",
     "test": "node --test game.test.js",
-    "build": "rm -rf dist && mkdir dist && cp index.html game.js gate.js dist/ && node -e \"require('./dist/game.js')\" && echo built dist/"
+    "build": "rm -rf dist && mkdir dist && cp index.html game.js dist/ && node -e \"require('./dist/game.js')\" && echo built dist/"
   }
 }
