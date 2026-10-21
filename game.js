@@ -13,11 +13,26 @@
   const REST_ENERGY = 25;
   const SCRAP_COINS = 5;
   const MAX_ROUNDS = 40;
-  const SAVE_VERSION = 1;
+  const SAVE_VERSION = 2;
   const TRAIN_TYPES = { peck: 'atk', run: 'spd', dodge: 'def' };
   // Tap-timing training: how well you timed the tap scales the gain.
   const TRAIN_QUALITY = { perfect: 1.5, good: 1, miss: 0.6 };
   const MAX_TIER = 20;
+  const PLOT_COUNT = 3;
+  const PLANT_COST = 8;
+  const GROW_MS = 45000;
+  const HARVEST_COINS = 18;
+  const HARVEST_ENERGY = 15;
+  // Looks are cosmetic only. Colors are authored here so the 3D chicken
+  // and the save file stay in sync without shipping image assets.
+  const LOOKS = [
+    { id: 0, name: 'Snow', body: '#fff4e0', comb: '#ff3b3b' },
+    { id: 1, name: 'Honey', body: '#f2d16b', comb: '#e04848' },
+    { id: 2, name: 'Cocoa', body: '#b5652b', comb: '#d12f2f' },
+    { id: 3, name: 'Storm', body: '#8a8f99', comb: '#c22424' },
+    { id: 4, name: 'Ink', body: '#2a2a2e', comb: '#ffd700' },
+    { id: 5, name: 'Sky', body: '#7eb6ff', comb: '#ff6b9d' },
+  ];
 
   // The rival ladder. Beat each one to unlock the next. Stats are fixed, so
   // the only way up is to train and level your own chicken (no shortcuts).
@@ -44,7 +59,14 @@
       def: 5,
       spd: 5,
       points: 0,
+      lookId: 0,
     };
+  }
+
+  function createGarden() {
+    const plots = [];
+    for (let i = 0; i < PLOT_COUNT; i += 1) plots.push(null);
+    return { plots: plots };
   }
 
   function createGame(name) {
@@ -52,11 +74,24 @@
       version: SAVE_VERSION,
       name: cleanName(name),
       chicken: createChicken(),
+      garden: createGarden(),
       beaten: 0, // how many rivals on the ladder you have beaten
       tier: 0, // champion tier: 0 = first ladder, +1 each time you go for a new crown
       wins: 0,
       losses: 0,
     };
+  }
+
+  function lookFor(id) {
+    const n = Math.floor(num(id, 0, 0, LOOKS.length - 1));
+    return LOOKS[n];
+  }
+
+  function setLook(chicken, id) {
+    const look = LOOKS[id];
+    if (!look) return { ok: false, reason: 'Unknown look' };
+    chicken.lookId = look.id;
+    return { ok: true, look: look };
   }
 
   function cleanName(name) {
@@ -156,6 +191,84 @@
   function canFight(chicken, bet) {
     const parsed = parseBet(bet);
     return parsed.ok && chicken.coins >= parsed.bet && chicken.energy >= FIGHT_ENERGY;
+  }
+
+  function normalizeGarden(raw) {
+    const garden = createGarden();
+    const src = raw && typeof raw === 'object' ? raw.plots : null;
+    if (!Array.isArray(src)) return garden;
+    for (let i = 0; i < PLOT_COUNT; i += 1) {
+      const p = src[i];
+      if (p && typeof p === 'object' && Number.isFinite(Number(p.plantedAt))) {
+        garden.plots[i] = { crop: 'corn', plantedAt: Math.floor(Number(p.plantedAt)) };
+      }
+    }
+    return garden;
+  }
+
+  function plotState(plot, now) {
+    if (!plot) return 'empty';
+    const t = (now == null ? Date.now() : now) - plot.plantedAt;
+    if (t >= GROW_MS) return 'ready';
+    return 'growing';
+  }
+
+  function plotReadyIn(plot, now) {
+    if (!plot) return 0;
+    const left = GROW_MS - ((now == null ? Date.now() : now) - plot.plantedAt);
+    return Math.max(0, left);
+  }
+
+  function canPlant(chicken, garden, slot) {
+    const i = slot | 0;
+    return !!garden && i >= 0 && i < PLOT_COUNT && !garden.plots[i] && chicken.coins >= PLANT_COST;
+  }
+
+  function plant(chicken, garden, slot, now) {
+    const i = slot | 0;
+    if (!garden || i < 0 || i >= PLOT_COUNT) return { ok: false, reason: 'No such plot' };
+    if (garden.plots[i]) return { ok: false, reason: 'Plot is already planted' };
+    if (chicken.coins < PLANT_COST) return { ok: false, reason: 'Need 8 coins to plant' };
+    chicken.coins -= PLANT_COST;
+    garden.plots[i] = { crop: 'corn', plantedAt: now == null ? Date.now() : now };
+    return { ok: true, slot: i, growMs: GROW_MS };
+  }
+
+  function harvest(chicken, garden, slot, now) {
+    const i = slot | 0;
+    if (!garden || i < 0 || i >= PLOT_COUNT) return { ok: false, reason: 'No such plot' };
+    const plot = garden.plots[i];
+    if (!plot) return { ok: false, reason: 'Nothing planted' };
+    if (plotState(plot, now) !== 'ready') return { ok: false, reason: 'Still growing' };
+    garden.plots[i] = null;
+    chicken.coins += HARVEST_COINS;
+    const before = chicken.energy;
+    chicken.energy = Math.min(100, chicken.energy + HARVEST_ENERGY);
+    return { ok: true, coins: HARVEST_COINS, energy: chicken.energy - before };
+  }
+
+  // Closed-form win chance so the Fight tab does not run 150 full
+  // simulations on every UI refresh (that hitch is ugly on phones).
+  function estimateWinChance(you, foe) {
+    function swingDmg(att, def) {
+      const dodge = dodgeChance(def.spd, att.spd);
+      const raw = hitDamage(att.atk, def.def, 0.5);
+      // 10% crit at 1.6×, matching simulate().
+      return (1 - dodge) * raw * 1.06;
+    }
+    const youHit = Math.max(0.35, swingDmg(you, foe));
+    const foeHit = Math.max(0.35, swingDmg(foe, you));
+    let youSwings = foe.hp / youHit;
+    let foeSwings = you.hp / foeHit;
+    // Faster bird pecks first; a 40% speed gap also gets a bonus peck
+    // every 3rd round, which we fold in as extra effective swings.
+    if (you.spd >= foe.spd) youSwings -= 0.45;
+    else foeSwings -= 0.45;
+    if (you.spd >= foe.spd * 1.4) youSwings *= 0.88;
+    else if (foe.spd >= you.spd * 1.4) foeSwings *= 0.88;
+    const delta = foeSwings - youSwings;
+    const p = 1 / (1 + Math.exp(-0.55 * delta));
+    return Math.max(0.01, Math.min(0.99, p));
   }
 
   function rivalFor(beaten) {
@@ -361,7 +474,9 @@
       def: num(c.def, d.def, 0, 1e6),
       spd: num(c.spd, d.spd, 0, 1e6),
       points: Math.floor(num(c.points, d.points, 0, 1e6)),
+      lookId: Math.floor(num(c.lookId, 0, 0, LOOKS.length - 1)),
     };
+    base.garden = normalizeGarden(data.garden);
     base.beaten = Math.floor(num(data.beaten, 0, 0, RIVALS.length));
     base.tier = Math.floor(num(data.tier, 0, 0, MAX_TIER));
     base.wins = Math.floor(num(data.wins, 0, 0, 1e9));
@@ -374,6 +489,7 @@
       version: SAVE_VERSION,
       name: game.name,
       chicken: game.chicken,
+      garden: game.garden || createGarden(),
       beaten: game.beaten,
       tier: game.tier | 0,
       wins: game.wins,
@@ -391,6 +507,12 @@
     TRAIN_TYPES: TRAIN_TYPES,
     TRAIN_QUALITY: TRAIN_QUALITY,
     MAX_TIER: MAX_TIER,
+    PLOT_COUNT: PLOT_COUNT,
+    PLANT_COST: PLANT_COST,
+    GROW_MS: GROW_MS,
+    HARVEST_COINS: HARVEST_COINS,
+    HARVEST_ENERGY: HARVEST_ENERGY,
+    LOOKS: LOOKS,
     gradeTap: gradeTap,
     tierScale: tierScale,
     rivalsForTier: rivalsForTier,
@@ -398,7 +520,17 @@
     promote: promote,
     RIVALS: RIVALS,
     createChicken: createChicken,
+    createGarden: createGarden,
     createGame: createGame,
+    lookFor: lookFor,
+    setLook: setLook,
+    normalizeGarden: normalizeGarden,
+    plotState: plotState,
+    plotReadyIn: plotReadyIn,
+    canPlant: canPlant,
+    plant: plant,
+    harvest: harvest,
+    estimateWinChance: estimateWinChance,
     cleanName: cleanName,
     parseBet: parseBet,
     gainXP: gainXP,
