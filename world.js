@@ -430,23 +430,43 @@ export function createWorld(canvas, hooks) {
   let previewKey = '';
   let celebrateT = 0;
 
+  function orbitPoint(base) {
+    const focus = base.look;
+    return {
+      look: focus,
+      x: focus.x + Math.sin(yaw) * dist * Math.cos(pitch),
+      y: focus.y + dist * Math.sin(pitch),
+      z: focus.z + Math.cos(yaw) * dist * Math.cos(pitch),
+    };
+  }
+
   function applyOrbit() {
     const base = (mode === 'fight' || mode === 'preview') ? RING : YARD;
-    const focus = base.look;
-    const lookK = reduceMotion ? 1 : 0.08;
-    const camK = reduceMotion ? 1 : 0.12;
-    look.lerp(focus, lookK);
-    const x = focus.x + Math.sin(yaw) * dist * Math.cos(pitch);
-    const y = focus.y + dist * Math.sin(pitch);
-    const z = focus.z + Math.cos(yaw) * dist * Math.cos(pitch);
-    camTarget.set(x, y, z);
+    const next = orbitPoint(base);
+    const lookK = reduceMotion || mode === 'preview' ? 1 : 0.08;
+    const camK = reduceMotion || mode === 'preview' ? 1 : 0.12;
+    look.lerp(next.look, lookK);
+    camTarget.set(next.x, next.y, next.z);
     camera.position.lerp(camTarget, camK);
+    camera.lookAt(look);
+  }
+
+  function snapOrbit() {
+    const base = (mode === 'fight' || mode === 'preview') ? RING : YARD;
+    const next = orbitPoint(base);
+    look.copy(next.look);
+    camTarget.set(next.x, next.y, next.z);
+    camera.position.copy(camTarget);
     camera.lookAt(look);
   }
 
   function setMode(next) {
     mode = next;
-    if (next === 'fight' || next === 'preview') {
+    if (next === 'preview') {
+      yaw = 0.0;
+      pitch = 0.22;
+      dist = 5.6;
+    } else if (next === 'fight') {
       yaw = 0.1;
       pitch = 0.3;
       dist = 7.0;
@@ -455,6 +475,7 @@ export function createWorld(canvas, hooks) {
       pitch = 0.36;
       dist = 8.1;
     }
+    if (next === 'preview' || reduceMotion) snapOrbit();
   }
 
   canvas.addEventListener('pointerdown', (e) => {
