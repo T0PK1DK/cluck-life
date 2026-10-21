@@ -91,7 +91,9 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
 .pts b { color:var(--gold); }
 .small-row { display:flex; gap:8px; margin-top:12px; }
 .small-row .btn { flex:1; min-height:42px; font-size:14px; }
-#muteBtn, #qualBtn { background:var(--card); border-radius:999px; padding:6px 10px; font-size:14px; min-width:40px; min-height:32px; }
+#muteBtn, #qualBtn, #motionBtn { background:var(--card); border-radius:999px; padding:6px 10px; font-size:14px; min-width:40px; min-height:32px; }
+.plot.glow { outline:2px solid var(--gold); }
+.plot.nest { grid-column: 1 / -1; }
 #timing { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:flex-end; padding-bottom:16px; background:rgba(18,13,32,.25); cursor:pointer; touch-action:manipulation; user-select:none; -webkit-user-select:none; z-index:4; }
 #timing.on { display:flex; }
 #timing .tlabel { font-weight:900; font-size:15px; background:rgba(18,13,32,.82); padding:4px 12px; border-radius:10px; margin-bottom:6px; }
@@ -102,6 +104,9 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
 .champ-box .btn { width:100%; margin-top:8px; background:var(--gold); color:#3a2300; box-shadow:0 4px 0 #a5781a; }
 #toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:#120d20; border:2px solid var(--gold); padding:10px 16px; border-radius:14px; font-weight:900; opacity:0; transition: all .25s; pointer-events:none; max-width:92vw; text-align:center; z-index:20; }
 #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .btn, .bar i, #toast { transition: none; }
+}
 #banner { position:absolute; left:50%; top:42%; transform:translate(-50%,-50%) scale(.92); background:rgba(18,13,32,.82); border-radius:14px; padding:12px 18px; text-align:center; display:none; z-index:3; min-width:220px; pointer-events:none; }
 #banner.on { display:block; }
 #banner .ttl { font-weight:900; font-size:24px; color:var(--gold); }
@@ -128,6 +133,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
       <div class="chip" id="lvlChip">Lv 1</div>
       <div class="chip coins" id="coinChip">🪙 100</div>
       <button id="qualBtn" aria-label="Graphics quality" title="Graphics">✨</button>
+      <button id="motionBtn" aria-label="Reduce motion" title="Motion">🎞️</button>
       <button id="muteBtn" aria-label="Sound on or off" title="Sound">🔊</button>
     </div>
   </header>
@@ -174,7 +180,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
           <button class="btn alt duo" id="napBtn">💤 Nap<small>free, +25⚡</small></button>
         </div>
         <div class="plots" id="plots"></div>
-        <p class="hint">Train at the dummy, track, or posts — or tap the buttons. Plant corn (8🪙) in the yard; it is ready in 45s even if you leave. Peck = attack, Run = speed, Dodge = defense. Nap is free only when you are too tired to fight. Drag the farm to look around.</p>
+        <p class="hint">Train at the dummy, track, or posts — or tap the buttons. Plant corn (8🪙) in the yard; it is ready in 45s even if you leave. The coop lays one coin egg every minute — tap the nest when it glows. Peck = attack, Run = speed, Dodge = defense. Nap is free only when you are too tired to fight. The Fight tab peeks at the rival in the ring. Drag the farm to look around.</p>
       </div>
 
       <div class="pane" id="pane-fight">
@@ -195,7 +201,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
           <div>👑 You're the champion! Ready for a tougher crown? <b id="champNext">Tier ★</b> brings back all 8 rivals, stronger, with bigger purses. You keep your chicken, coins and record.</div>
           <button class="btn" id="promoteBtn">Go for the next crown</button>
         </div>
-        <p class="hint" id="fightHint">Win: your bet back ×2 plus the purse. Lose: you lose the bet. Beaten rivals can be rematched for a smaller purse.</p>
+        <p class="hint" id="fightHint">Win: your bet back ×2 plus the purse. Lose: you lose the bet. Beaten rivals can be rematched for a smaller purse. Open this tab to peek at the rival in the ring before you bet.</p>
       </div>
 
       <div class="pane" id="pane-chicken">

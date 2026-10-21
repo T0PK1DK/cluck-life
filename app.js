@@ -4,6 +4,7 @@ const CL = window.CluckLife;
 const SAVE_KEY = 'cluck-life-save-v1';
 const MUTE_KEY = 'cluck-life-muted';
 const QUAL_KEY = 'cluck-life-quality';
+const MOTION_KEY = 'cluck-life-motion';
 const $ = (id) => document.getElementById(id);
 
 let game = null;
@@ -11,6 +12,7 @@ try { game = CL.loadGame(localStorage.getItem(SAVE_KEY)); } catch (e) { game = n
 const isNew = !game;
 if (!game) game = CL.createGame('Clucky');
 if (!game.garden) game.garden = CL.createGarden();
+if (!game.coop) game.coop = CL.createCoop();
 let bet = 10;
 let rematchIdx = null;
 let displayCoins = game.chicken.coins;
@@ -137,30 +139,63 @@ function paintLook() {
   if (world) world.setLook(look.body, look.comb);
 }
 
+let plotButtons = null;
 function paintGarden() {
   const now = Date.now();
   const states = game.garden.plots.map((p) => CL.plotState(p, now));
-  if (world) world.setGarden(states);
+  if (world) {
+    world.setGarden(states);
+    world.setEgg(CL.canCollectEgg(game.coop, now));
+    world.setCare(game.chicken.energy);
+  }
   const box = $('plots');
-  box.innerHTML = '';
+  if (!plotButtons || plotButtons.length !== CL.PLOT_COUNT + 1) {
+    box.innerHTML = '';
+    plotButtons = [];
+    for (let i = 0; i < CL.PLOT_COUNT; i += 1) {
+      const b = document.createElement('button');
+      b.className = 'plot';
+      b.addEventListener('click', () => {
+        const st = CL.plotState(game.garden.plots[i]);
+        if (st === 'empty') doPlant(i);
+        else if (st === 'ready') doHarvest(i);
+      });
+      box.appendChild(b);
+      plotButtons.push(b);
+    }
+    const nest = document.createElement('button');
+    nest.className = 'plot nest';
+    nest.addEventListener('click', doCollectEgg);
+    box.appendChild(nest);
+    plotButtons.push(nest);
+  }
+  const locked = !!busy();
   for (let i = 0; i < CL.PLOT_COUNT; i += 1) {
-    const b = document.createElement('button');
-    b.className = 'plot';
+    const b = plotButtons[i];
     const st = states[i];
+    b.classList.toggle('glow', st === 'ready');
     if (st === 'empty') {
       b.innerHTML = '<b>🌱</b>Plant 8🪙';
-      b.disabled = !!busy() || !CL.canPlant(game.chicken, game.garden, i);
-      b.onclick = () => doPlant(i);
+      b.disabled = locked || !CL.canPlant(game.chicken, game.garden, i);
     } else if (st === 'growing') {
       const sec = Math.ceil(CL.plotReadyIn(game.garden.plots[i], now) / 1000);
       b.innerHTML = '<b>🌽</b>' + sec + 's';
       b.disabled = true;
     } else {
       b.innerHTML = '<b>✨</b>Harvest';
-      b.disabled = !!busy();
-      b.onclick = () => doHarvest(i);
+      b.disabled = locked;
     }
-    box.appendChild(b);
+  }
+  const nest = plotButtons[CL.PLOT_COUNT];
+  const eggReady = CL.canCollectEgg(game.coop, now);
+  nest.classList.toggle('glow', eggReady);
+  if (eggReady) {
+    nest.innerHTML = '<b>🥚</b>Collect ' + CL.EGG_COINS + '🪙';
+    nest.disabled = locked;
+  } else {
+    const sec = Math.ceil(CL.coopReadyIn(game.coop, now) / 1000);
+    nest.innerHTML = '<b>🪺</b>Egg in ' + sec + 's';
+    nest.disabled = true;
   }
 }
 
@@ -260,13 +295,12 @@ function updateUI() {
   const rm = $('rematch');
   rm.innerHTML = '';
   if (game.beaten > 0) {
-    const mk = (label, val) => { const b = document.createElement('button'); b.textContent = label; if (rematchIdx === val) b.classList.add('on'); b.disabled = lock; b.onclick = () => { rematchIdx = val; updateUI(); }; rm.appendChild(b); };
+    const selected = rematchIdx == null ? (champ ? L.length - 1 : null) : rematchIdx;
+    const mk = (label, val) => { const b = document.createElement('button'); b.textContent = label; if (val === selected) b.classList.add('on'); b.disabled = lock; b.onclick = () => { rematchIdx = val; updateUI(); }; rm.appendChild(b); };
     if (!champ) mk('Next: ' + L[game.beaten].name, null);
-    for (let i = 0; i < Math.min(game.beaten, L.length); i++) {
-      if (champ && i === L.length - 1 && rematchIdx == null) continue;
-      mk('Rematch ' + L[i].name, i);
-    }
+    for (let i = 0; i < Math.min(game.beaten, L.length); i++) mk('Rematch ' + L[i].name, i);
   }
+  syncPreview();
   $('champBox').style.display = CL.canPromote(game) ? 'block' : 'none';
   $('champNext').textContent = 'Tier' + stars(game.tier + 1);
   $('promoteBtn').disabled = lock;
@@ -289,7 +323,27 @@ function updateUI() {
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
   document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t));
   document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + t.dataset.tab));
+  syncPreview();
 }));
+
+function fightTabOn() {
+  const t = document.querySelector('.tab[data-tab="fight"]');
+  return !!(t && t.classList.contains('on'));
+}
+
+let holdPreviewUntil = 0;
+function syncPreview() {
+  if (!world) return;
+  const f = world.fighting && world.fighting();
+  if (f) return;
+  if (Date.now() < holdPreviewUntil) return;
+  if (fightTabOn()) {
+    const { foe } = currentFoe();
+    world.showRival(foe.color, foe.comb);
+  } else {
+    world.hideRival();
+  }
+}
 
 function afterLevels(levels) {
   if (levels && levels.length) {
@@ -350,7 +404,7 @@ function doPlant(slot) {
   const r = CL.plant(game.chicken, game.garden, slot);
   if (!r.ok) { toast(r.reason); return; }
   sfx.coin();
-  if (world) world.play('harvest');
+  if (world) world.play('plot', { slot: slot });
   toast('Corn planted — back in 45 seconds');
   save(); updateUI();
 }
@@ -359,9 +413,20 @@ function doHarvest(slot) {
   const r = CL.harvest(game.chicken, game.garden, slot);
   if (!r.ok) { toast(r.reason); return; }
   sfx.coin();
-  if (world) { world.play('harvest'); world.burstAtMe('#ffd34d', 8); }
+  if (world) { world.play('plot', { slot: slot }); world.burstAtMe('#ffd34d', 8); }
   const pt = world ? world.meScreen() : { x: 80, y: 80 };
   floatAt(pt, '+' + r.coins + '🪙', '#ffd34d');
+  save(); updateUI();
+}
+function doCollectEgg() {
+  if (busy()) return;
+  const r = CL.collectEgg(game.chicken, game.coop);
+  if (!r.ok) { toast(r.reason); return; }
+  sfx.coin();
+  if (world) { world.play('egg'); world.burstAtMe('#fff6e8', 8); }
+  const pt = world ? world.meScreen() : { x: 80, y: 80 };
+  floatAt(pt, '+' + r.coins + '🪙', '#ffd34d');
+  toast('Warm egg from the nest');
   save(); updateUI();
 }
 
@@ -404,7 +469,7 @@ function startBrawl() {
   r.youMax = game.chicken.hp;
   if (world) {
     world.startFight(r);
-    $('skipBtn').style.display = 'block';
+    if (!(world.getReduceMotion && world.getReduceMotion())) $('skipBtn').style.display = 'block';
     $('hpFoeName').firstChild.textContent = r.foe.name + ' ';
     setHp(1, 1);
   }
@@ -446,10 +511,15 @@ function onFightOver(r) {
 function onContinue() {
   const f = world && world.fighting && world.fighting();
   if (!f || !f.done) return;
+  const champWin = !!(f.result && f.result.newChampion);
   world.leaveFight();
   showBanner(null);
   setHp(null, null);
   displayCoins = game.chicken.coins;
+  if (champWin && world && world.celebrateChampion) {
+    world.celebrateChampion();
+    holdPreviewUntil = Date.now() + 2400;
+  }
   updateUI();
 }
 
@@ -458,6 +528,7 @@ try {
     onPick(kind, slot) {
       if (kind === 'peck' || kind === 'run' || kind === 'dodge') openTiming(kind);
       else if (kind === 'feed') $('feedBtn').click();
+      else if (kind === 'egg') doCollectEgg();
       else if (kind === 'plot') {
         const st = CL.plotState(game.garden.plots[slot]);
         if (st === 'empty') doPlant(slot);
@@ -494,7 +565,29 @@ try {
   });
 })();
 
-setInterval(paintGarden, 1000);
+(function motionToggle() {
+  let reduce = false;
+  try {
+    const saved = localStorage.getItem(MOTION_KEY);
+    if (saved === '1' || saved === '0') reduce = saved === '1';
+    else reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  } catch (e) {}
+  function apply() {
+    if (world && world.setReduceMotion) world.setReduceMotion(reduce);
+    $('motionBtn').textContent = reduce ? '⏸️' : '🎞️';
+    $('motionBtn').title = reduce ? 'Motion off (tap to animate fights)' : 'Motion on (tap to skip fight playback)';
+    $('motionBtn').setAttribute('aria-pressed', reduce ? 'true' : 'false');
+  }
+  apply();
+  $('motionBtn').addEventListener('click', () => {
+    reduce = !reduce;
+    try { localStorage.setItem(MOTION_KEY, reduce ? '1' : '0'); } catch (e) {}
+    apply();
+    sfx.tap();
+  });
+})();
+
+setInterval(() => { if (!document.hidden) paintGarden(); }, 1000);
 updateUI();
 if (isNew) setTimeout(() => toast('Train up, then beat 8 rivals to become champion. Start with Pip!'), 400);
 save();

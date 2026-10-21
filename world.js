@@ -85,20 +85,14 @@ export function createWorld(canvas, hooks) {
 
   function applyQuality() {
     const phone = quality === 'phone';
-    const dpr = Math.min(window.devicePixelRatio || 1, phone ? 1.2 : 1.75);
+    const dpr = Math.min(window.devicePixelRatio || 1, phone ? 1.15 : 1.6);
     renderer.setPixelRatio(dpr);
-    renderer.shadowMap.enabled = !phone;
-    sun.castShadow = !phone;
-    if (!phone) {
-      sun.shadow.mapSize.set(512, 512);
-      sun.shadow.camera.near = 2;
-      sun.shadow.camera.far = 40;
-      sun.shadow.camera.left = -16;
-      sun.shadow.camera.right = 16;
-      sun.shadow.camera.top = 12;
-      sun.shadow.camera.bottom = -12;
-    }
-    scene.fog.far = phone ? 28 : 34;
+    // Fake blob shadows on the chickens already sell the light. Real
+    // shadow maps were flipped on for "high" even though no mesh cast,
+    // which just burned GPU on tablets.
+    renderer.shadowMap.enabled = false;
+    sun.castShadow = false;
+    scene.fog.far = phone ? 26 : 34;
   }
 
   // ---------- chickens ----------
@@ -231,9 +225,17 @@ export function createWorld(canvas, hooks) {
     coop.add(mesh(geo.box, '#b8782f', 0, 1.55, 0, 2.5, 0.18, 2.1));
     coop.add(mesh(geo.box, '#5a2a10', 0, 0.55, 0.92, 0.55, 1.1, 0.08));
     coop.add(mesh(geo.box, '#8a8f99', 0.7, 1.95, 0.2, 0.1, 0.7, 0.1));
+    const nest = mesh(geo.sphere, '#c9a36a', 0, 0.16, 1.18, 0.46, 0.12, 0.4);
+    const egg = mesh(geo.sphere, '#fff6e8', 0, 0.34, 1.18, 0.13, 0.17, 0.13);
+    egg.visible = false;
+    coop.add(nest, egg);
+    coop.userData.kind = 'egg';
+    coop.userData.egg = egg;
+    coop.userData.nest = nest;
     return coop;
   }
-  root.add(buildCoop());
+  const coop = buildCoop();
+  root.add(coop);
 
   const feeder = new THREE.Group();
   feeder.position.set(2.95, 0, 1.85);
@@ -341,11 +343,13 @@ export function createWorld(canvas, hooks) {
 
   const sunBall = mesh(geo.sphere, '#ffe36b', 11, 9.2, -10, 1.15, 1.15, 1.15);
   root.add(sunBall);
+  const clouds = [];
   for (let i = 0; i < 3; i += 1) {
     const cloud = mesh(geo.sphere, '#ffffff', -8 + i * 7, 7.4 + (i % 2), -9.5, 1.6, 0.55, 0.9, { transparent: true, opacity: 0.88 });
     cloud.userData.drift = 4 + i * 2;
     cloud.userData.baseX = cloud.position.x;
     root.add(cloud);
+    clouds.push(cloud);
   }
 
   // garden plots
@@ -407,7 +411,7 @@ export function createWorld(canvas, hooks) {
   root.add(arena);
 
   // pickables
-  const pickables = [dummy, posts, track, feeder, plots[0], plots[1], plots[2]];
+  const pickables = [dummy, posts, track, feeder, coop, plots[0], plots[1], plots[2]];
 
   // ---------- camera / input ----------
   const look = YARD.look.clone();
@@ -416,25 +420,33 @@ export function createWorld(canvas, hooks) {
   let pitch = 0.36;
   let dist = 8.1;
   let dragging = false;
+  let dragDist = 0;
   let lastX = 0;
   let lastY = 0;
   let mode = 'yard';
+  let reduceMotion = false;
+  let careEnergy = 100;
+  let previewing = false;
+  let previewKey = '';
+  let celebrateT = 0;
 
   function applyOrbit() {
-    const base = mode === 'fight' ? RING : YARD;
+    const base = (mode === 'fight' || mode === 'preview') ? RING : YARD;
     const focus = base.look;
-    look.lerp(focus, 0.08);
+    const lookK = reduceMotion ? 1 : 0.08;
+    const camK = reduceMotion ? 1 : 0.12;
+    look.lerp(focus, lookK);
     const x = focus.x + Math.sin(yaw) * dist * Math.cos(pitch);
     const y = focus.y + dist * Math.sin(pitch);
     const z = focus.z + Math.cos(yaw) * dist * Math.cos(pitch);
     camTarget.set(x, y, z);
-    camera.position.lerp(camTarget, 0.12);
+    camera.position.lerp(camTarget, camK);
     camera.lookAt(look);
   }
 
   function setMode(next) {
     mode = next;
-    if (next === 'fight') {
+    if (next === 'fight' || next === 'preview') {
       yaw = 0.1;
       pitch = 0.3;
       dist = 7.0;
@@ -448,6 +460,7 @@ export function createWorld(canvas, hooks) {
   canvas.addEventListener('pointerdown', (e) => {
     if (e.button != null && e.button !== 0) return;
     dragging = true;
+    dragDist = 0;
     lastX = e.clientX;
     lastY = e.clientY;
     canvas.setPointerCapture(e.pointerId);
@@ -459,6 +472,8 @@ export function createWorld(canvas, hooks) {
     lastX = e.clientX;
     lastY = e.clientY;
     if (Math.abs(dx) + Math.abs(dy) < 1) return;
+    dragDist += Math.abs(dx) + Math.abs(dy);
+    celebrateT = 0;
     yaw -= dx * 0.005;
     pitch = Math.max(0.22, Math.min(0.72, pitch + dy * 0.004));
   });
@@ -472,6 +487,7 @@ export function createWorld(canvas, hooks) {
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
   canvas.addEventListener('click', (e) => {
+    if (dragDist > 8) return;
     if (fighting && fighting.done) {
       if (emit.onContinue) emit.onContinue();
       return;
@@ -531,7 +547,9 @@ export function createWorld(canvas, hooks) {
     p.wingR.rotation.z = -0.2 - flap;
     ch.rotation.z = a.lean + (a.dead ? -a.dead * 1.2 : 0);
     ch.rotation.y = a.face > 0 ? 0.15 : Math.PI - 0.15;
-    const blink = (clock.t + ch.position.x) % 3.6 < 0.12 || a.dead;
+    const sleepy = ch === me && careEnergy < 20 && mode === 'yard';
+    const blinkGap = sleepy ? 1.6 : 3.6;
+    const blink = (clock.t + ch.position.x) % blinkGap < (sleepy ? 0.22 : 0.12) || a.dead;
     p.eyeL.scale.y = blink ? 0.15 : 1;
     p.eyeR.scale.y = blink ? 0.15 : 1;
     p.glintL.visible = !blink;
@@ -540,10 +558,12 @@ export function createWorld(canvas, hooks) {
     p.body.material.emissiveIntensity = a.flash;
   }
 
-  function play(kind) {
+  function play(kind, extra) {
+    if (previewing && !fighting) hideRival();
     const a = me.userData.anim;
     a.kind = kind;
     a.t = 0;
+    a.slot = extra && extra.slot != null ? extra.slot : 0;
   }
 
   function stepYard(dt) {
@@ -589,28 +609,92 @@ export function createWorld(canvas, hooks) {
       a.hop = Math.abs(Math.sin(a.t * 9)) * 0.5;
       a.flap = true;
       if (a.t > 1.05) a.kind = null;
-    } else if (a.kind === 'harvest') {
-      a.peck = Math.max(0, Math.sin(a.t * 16));
-      if (a.t > 0.7) a.kind = null;
+    } else if (a.kind === 'harvest' || a.kind === 'plot') {
+      const slot = a.slot | 0;
+      const tx = -1.45 + slot * 1.15;
+      const tz = 2.15;
+      me.position.x += (tx - me.position.x) * Math.min(1, dt * 5);
+      me.position.z += (tz - me.position.z) * Math.min(1, dt * 5);
+      a.face = tx >= me.position.x ? 1 : -1;
+      if (a.t > 0.28) a.peck = Math.max(0, Math.sin(a.t * 16));
+      if (a.t > 1.0) a.kind = null;
+    } else if (a.kind === 'egg') {
+      me.position.x += (4.15 - me.position.x) * Math.min(1, dt * 5);
+      me.position.z += (-1.7 - me.position.z) * Math.min(1, dt * 5);
+      a.face = 1;
+      a.peck = a.t > 0.3 ? Math.max(0, Math.sin(a.t * 14)) : 0;
+      if (a.t > 1.05) a.kind = null;
     } else {
-      if (Math.abs(me.position.x - a.wander) < 0.08 && Math.random() < 0.008) a.wander = -0.6 + Math.random() * 1.6;
+      const mood = careEnergy < 20 ? 'sleepy' : careEnergy < 50 ? 'hungry' : careEnergy >= 80 ? 'perky' : 'idle';
+      const wanderChance = mood === 'sleepy' ? 0.002 : 0.008;
+      const walk = mood === 'sleepy' ? 0.35 : mood === 'perky' ? 0.9 : 0.7;
+      if (Math.abs(me.position.x - a.wander) < 0.08 && Math.random() < wanderChance) a.wander = -0.6 + Math.random() * 1.6;
       const dx = (a.wander || 0.6) - me.position.x;
-      if (Math.abs(dx) > 0.08) {
-        me.position.x += Math.sign(dx) * dt * 0.7;
+      if (mood === 'sleepy') {
+        a.lean = 0.32;
+        if (Math.abs(dx) > 0.2) {
+          me.position.x += Math.sign(dx) * dt * walk;
+          a.face = dx > 0 ? 1 : -1;
+        }
+      } else if (Math.abs(dx) > 0.08) {
+        me.position.x += Math.sign(dx) * dt * walk;
         a.face = dx > 0 ? 1 : -1;
-        a.run = true;
+        a.run = mood === 'perky';
+        if (mood === 'perky') a.hop = Math.abs(Math.sin(clock.t * 6)) * 0.06;
+      } else if (mood === 'hungry' && (clock.t % 3.2) < 0.55) {
+        a.peck = Math.max(0, Math.sin(clock.t * 16));
+        a.face = 1;
       } else if ((clock.t % 5) < 0.45) a.peck = Math.max(0, Math.sin(clock.t * 16));
     }
     poseChicken(me, dt);
+    if (foe && !fighting) {
+      foe.userData.anim.hop = Math.abs(Math.sin(clock.t * 3.2)) * 0.08;
+      poseChicken(foe, dt);
+    }
+  }
+
+  function ensureFoe(color, comb) {
+    if (foe) {
+      paintChicken(foe, color, comb);
+      if (!foe.parent) root.add(foe);
+      return foe;
+    }
+    foe = makeChicken(color, comb);
+    foe.scale.setScalar(BIRD);
+    root.add(foe);
+    return foe;
+  }
+
+  function showRival(color, comb) {
+    if (fighting && !fighting.done) return;
+    const key = String(color) + '|' + String(comb);
+    if (previewing && previewKey === key && foe && mode === 'preview') return;
+    previewKey = key;
+    previewing = true;
+    ensureFoe(color, comb);
+    Object.assign(foe.userData.anim, { kind: null, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, face: -1 });
+    foe.position.set(ARENA_X + 1.55, 0, 0.1);
+    me.position.set(ARENA_X - 1.55, 0, 0.1);
+    Object.assign(me.userData.anim, { kind: null, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, face: 1 });
+    if (!fighting) setMode('preview');
+  }
+
+  function hideRival() {
+    if (fighting) return;
+    previewing = false;
+    previewKey = '';
+    if (foe) { root.remove(foe); foe = null; }
+    me.position.set(0.25, 0, 0.55);
+    Object.assign(me.userData.anim, { dead: 0, hop: 0, lean: 0, face: 1, kind: null });
+    setMode('yard');
   }
 
   function startFight(result) {
-    if (foe) root.remove(foe);
-    foe = makeChicken(result.foe.color, result.foe.comb);
-    foe.scale.setScalar(BIRD);
+    previewing = false;
+    previewKey = '';
+    ensureFoe(result.foe.color, result.foe.comb);
     foe.position.set(ARENA_X + 1.55, 0, 0.1);
-    foe.userData.anim.face = -1;
-    root.add(foe);
+    Object.assign(foe.userData.anim, { kind: null, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, face: -1 });
     me.position.set(ARENA_X - 1.55, 0, 0.1);
     Object.assign(me.userData.anim, { kind: null, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, face: 1 });
     setMode('fight');
@@ -624,6 +708,14 @@ export function createWorld(canvas, hooks) {
       done: false,
       impact: false,
     };
+    if (reduceMotion) {
+      fighting.phase = 'end';
+      fighting.done = true;
+      fighting.i = result.log.length;
+      if (emit.onHp) emit.onHp(result.pHp / fighting.maxYou, result.aHp / fighting.maxFoe);
+      if (emit.onFightOver) emit.onFightOver(result);
+      return;
+    }
     if (emit.onBanner) {
       emit.onBanner({
         text: 'VS ' + result.foe.name.toUpperCase(),
@@ -709,9 +801,11 @@ export function createWorld(canvas, hooks) {
     if (f.phase === 'end') {
       const winner = f.result.won ? me : foe;
       const loser = f.result.won ? foe : me;
-      winner.userData.anim.hop = Math.abs(Math.sin(f.t * 9)) * 0.38;
-      winner.userData.anim.flap = true;
-      loser.userData.anim.dead = Math.min(1, loser.userData.anim.dead + dt * 3);
+      if (!reduceMotion) {
+        winner.userData.anim.hop = Math.abs(Math.sin(f.t * 9)) * 0.38;
+        winner.userData.anim.flap = true;
+        loser.userData.anim.dead = Math.min(1, loser.userData.anim.dead + dt * 3);
+      }
       poseChicken(me, dt);
       poseChicken(foe, dt);
     }
@@ -733,12 +827,23 @@ export function createWorld(canvas, hooks) {
 
   function leaveFight() {
     fighting = null;
+    previewing = false;
+    previewKey = '';
     if (foe) { root.remove(foe); foe = null; }
     me.position.set(0.25, 0, 0.55);
     Object.assign(me.userData.anim, { dead: 0, hop: 0, lean: 0, face: 1, kind: null });
     setMode('yard');
     if (emit.onBanner) emit.onBanner(null);
     if (emit.onHp) emit.onHp(null, null);
+  }
+
+  function celebrateChampion() {
+    barn.userData.star.visible = true;
+    celebrateT = reduceMotion ? 0.2 : 2.4;
+    burst(barn.position.x, 2.6, barn.position.z, '#ffd34d', reduceMotion ? 4 : 18);
+    yaw = 2.55;
+    pitch = 0.4;
+    dist = 9.0;
   }
 
   function resize() {
@@ -767,6 +872,14 @@ export function createWorld(canvas, hooks) {
     }
     if (mode === 'fight') stepFight(dt);
     else stepYard(dt);
+    if (celebrateT > 0) {
+      celebrateT -= dt;
+      if (celebrateT <= 0 && mode === 'yard') {
+        yaw = 0.46;
+        pitch = 0.36;
+        dist = 8.1;
+      }
+    }
     applyOrbit();
     for (let i = parts.length - 1; i >= 0; i -= 1) {
       const p = parts[i];
@@ -782,9 +895,13 @@ export function createWorld(canvas, hooks) {
         partPool.push(p);
       }
     }
-    root.children.forEach((c) => {
-      if (c.userData.drift) c.position.x = c.userData.baseX + Math.sin(clock.t * 0.12 * c.userData.drift) * 1.4;
-    });
+    for (let i = 0; i < clouds.length; i += 1) {
+      const c = clouds[i];
+      c.position.x = c.userData.baseX + Math.sin(clock.t * 0.12 * c.userData.drift) * 1.4;
+    }
+    if (coop.userData.egg && coop.userData.egg.visible && !reduceMotion) {
+      coop.userData.egg.position.y = 0.34 + Math.sin(clock.t * 3) * 0.03;
+    }
     renderer.render(scene, camera);
   }
 
@@ -803,7 +920,16 @@ export function createWorld(canvas, hooks) {
         plots[i].userData.ready.visible = s === 'ready';
       });
     },
+    setEgg: function (ready) {
+      if (coop.userData.egg) coop.userData.egg.visible = !!ready;
+    },
+    setCare: function (energy) { careEnergy = Number(energy) || 0; },
+    setReduceMotion: function (on) { reduceMotion = !!on; },
+    getReduceMotion: function () { return reduceMotion; },
+    showRival: showRival,
+    hideRival: hideRival,
     setChampion: function (on) { barn.userData.star.visible = !!on; },
+    celebrateChampion: celebrateChampion,
     startFight: function (result) { startFight(result); },
     skipFight: function () { if (fighting) endFight(); },
     leaveFight: function () { leaveFight(); },

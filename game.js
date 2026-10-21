@@ -13,7 +13,7 @@
   const REST_ENERGY = 25;
   const SCRAP_COINS = 5;
   const MAX_ROUNDS = 40;
-  const SAVE_VERSION = 2;
+  const SAVE_VERSION = 3;
   const TRAIN_TYPES = { peck: 'atk', run: 'spd', dodge: 'def' };
   // Tap-timing training: how well you timed the tap scales the gain.
   const TRAIN_QUALITY = { perfect: 1.5, good: 1, miss: 0.6 };
@@ -23,6 +23,10 @@
   const GROW_MS = 45000;
   const HARVEST_COINS = 18;
   const HARVEST_ENERGY = 15;
+  // Coop nest: one coin egg at a time, like a tiny Egg Case Farm loop.
+  // Cap of one waiting egg so it never becomes an AFK tycoon.
+  const LAY_MS = 60000;
+  const EGG_COINS = 6;
   // Looks are cosmetic only. Colors are authored here so the 3D chicken
   // and the save file stay in sync without shipping image assets.
   const LOOKS = [
@@ -69,17 +73,32 @@
     return { plots: plots };
   }
 
+  function createCoop(now) {
+    return { lastCollectAt: now == null ? Date.now() : now };
+  }
+
   function createGame(name) {
     return {
       version: SAVE_VERSION,
       name: cleanName(name),
       chicken: createChicken(),
       garden: createGarden(),
+      coop: createCoop(),
       beaten: 0, // how many rivals on the ladder you have beaten
       tier: 0, // champion tier: 0 = first ladder, +1 each time you go for a new crown
       wins: 0,
       losses: 0,
     };
+  }
+
+  // Adopt Me–style mood for animation only. Never locks play.
+  function careMood(energy) {
+    const e = Number(energy);
+    if (!Number.isFinite(e)) return 'idle';
+    if (e < 20) return 'sleepy';
+    if (e < 50) return 'hungry';
+    if (e >= 80) return 'perky';
+    return 'idle';
   }
 
   function lookFor(id) {
@@ -245,6 +264,37 @@
     const before = chicken.energy;
     chicken.energy = Math.min(100, chicken.energy + HARVEST_ENERGY);
     return { ok: true, coins: HARVEST_COINS, energy: chicken.energy - before };
+  }
+
+  function normalizeCoop(raw, now) {
+    const t = now == null ? Date.now() : now;
+    if (raw && typeof raw === 'object' && Number.isFinite(Number(raw.lastCollectAt))) {
+      return { lastCollectAt: Math.min(t, Math.floor(Number(raw.lastCollectAt))) };
+    }
+    return createCoop(t);
+  }
+
+  function coopState(coop, now) {
+    if (!coop) return 'laying';
+    return coopReadyIn(coop, now) <= 0 ? 'ready' : 'laying';
+  }
+
+  function coopReadyIn(coop, now) {
+    const t = now == null ? Date.now() : now;
+    const last = coop && Number.isFinite(Number(coop.lastCollectAt)) ? Number(coop.lastCollectAt) : t;
+    return Math.max(0, LAY_MS - (t - last));
+  }
+
+  function canCollectEgg(coop, now) {
+    return coopState(coop, now) === 'ready';
+  }
+
+  function collectEgg(chicken, coop, now) {
+    if (!chicken || !coop) return { ok: false, reason: 'No nest' };
+    if (!canCollectEgg(coop, now)) return { ok: false, reason: 'No egg yet' };
+    chicken.coins += EGG_COINS;
+    coop.lastCollectAt = now == null ? Date.now() : now;
+    return { ok: true, coins: EGG_COINS };
   }
 
   // Closed-form win chance so the Fight tab does not run 150 full
@@ -477,6 +527,7 @@
       lookId: Math.floor(num(c.lookId, 0, 0, LOOKS.length - 1)),
     };
     base.garden = normalizeGarden(data.garden);
+    base.coop = normalizeCoop(data.coop);
     base.beaten = Math.floor(num(data.beaten, 0, 0, RIVALS.length));
     base.tier = Math.floor(num(data.tier, 0, 0, MAX_TIER));
     base.wins = Math.floor(num(data.wins, 0, 0, 1e9));
@@ -490,6 +541,7 @@
       name: game.name,
       chicken: game.chicken,
       garden: game.garden || createGarden(),
+      coop: game.coop || createCoop(),
       beaten: game.beaten,
       tier: game.tier | 0,
       wins: game.wins,
@@ -512,7 +564,10 @@
     GROW_MS: GROW_MS,
     HARVEST_COINS: HARVEST_COINS,
     HARVEST_ENERGY: HARVEST_ENERGY,
+    LAY_MS: LAY_MS,
+    EGG_COINS: EGG_COINS,
     LOOKS: LOOKS,
+    careMood: careMood,
     gradeTap: gradeTap,
     tierScale: tierScale,
     rivalsForTier: rivalsForTier,
@@ -521,6 +576,7 @@
     RIVALS: RIVALS,
     createChicken: createChicken,
     createGarden: createGarden,
+    createCoop: createCoop,
     createGame: createGame,
     lookFor: lookFor,
     setLook: setLook,
@@ -530,6 +586,11 @@
     canPlant: canPlant,
     plant: plant,
     harvest: harvest,
+    normalizeCoop: normalizeCoop,
+    coopState: coopState,
+    coopReadyIn: coopReadyIn,
+    canCollectEgg: canCollectEgg,
+    collectEgg: collectEgg,
     estimateWinChance: estimateWinChance,
     cleanName: cleanName,
     parseBet: parseBet,
