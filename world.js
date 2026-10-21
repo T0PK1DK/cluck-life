@@ -238,7 +238,7 @@ export function createWorld(canvas, hooks) {
   const feeder = new THREE.Group();
   feeder.position.set(2.95, 0, 1.85);
   feeder.add(mesh(geo.box, '#9a6b3d', 0, 0.22, 0, 1.3, 0.18, 0.8));
-  feeder.add(mesh(geo.cyl, '#ffd34d', 0, 0.34, 0, 0.42, 0.12, 0.28));
+  feeder.add(mesh(geo.sphere, '#ffd34d', 0, 0.34, 0, 0.38, 0.1, 0.26));
   feeder.userData.kind = 'feed';
   root.add(feeder);
 
@@ -258,9 +258,11 @@ export function createWorld(canvas, hooks) {
 
   const track = new THREE.Group();
   track.position.set(-0.7, 0.03, 0.05);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.55, 0.16, 6, 18), mat('#c9a36a'));
-  ring.rotation.x = Math.PI / 2;
-  track.add(ring);
+  const ring = mesh(geo.circle, '#c9a36a', 0, 0.01, 0, 1.7, 1, 1.7);
+  ring.rotation.x = -Math.PI / 2;
+  const hole = mesh(geo.circle, '#5dcc55', 0, 0.02, 0, 1.28, 1, 1.28);
+  hole.rotation.x = -Math.PI / 2;
+  track.add(ring, hole);
   track.userData.kind = 'run';
   root.add(track);
 
@@ -380,10 +382,10 @@ export function createWorld(canvas, hooks) {
   const inner = mesh(geo.circle, '#c49658', 0, 0.04, 0, 2.4, 1, 2.4);
   inner.rotation.x = -Math.PI / 2;
   arena.add(inner);
-  const rail = new THREE.Mesh(new THREE.TorusGeometry(3.25, 0.09, 6, 22), mat('#8b5a2b'));
-  rail.rotation.x = Math.PI / 2;
-  rail.position.y = 0.55;
-  arena.add(rail);
+  for (let i = 0; i < 12; i += 1) {
+    const a = (i / 12) * Math.PI * 2;
+    arena.add(mesh(geo.box, '#8b5a2b', Math.cos(a) * 3.15, 0.42, Math.sin(a) * 3.15, 0.18, 0.84, 0.18));
+  }
   const crowdN = quality === 'phone' ? 10 : 16;
   const crowd = new THREE.InstancedMesh(geo.sphere, mat('#6b4f9e'), crowdN);
   {
