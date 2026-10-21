@@ -2,39 +2,41 @@
 
 ## What this pass did
 
-Overnight add-on pass on top of the cozy 3D farm. Same raise / train / fight loop. Still open — no passcode, no shop, no account, no deploy.
+Farm loop, rival mode, and phone polish. Still open: no passcode, no shop, no account, no deploy. Save version 4. v3 saves load: old plots stay corn, and the rivalry starts at rank 0.
 
-### Feature (Egg Case Farm–style nest)
+### Better farm loop
 
-- The unused coop now **lays one coin egg every 60 seconds**.
-- Collect 6 coins. Only one egg waits, so it never becomes an AFK tycoon.
-- Grows while the tab is closed. Click the nest in the yard or the Train-tab button.
-- Save version 3. Old v2 saves start a fresh lay timer instead of granting a free egg.
+- **Second crop: wheat.** 14 coins, 2 minutes, pays 40 coins and 5 energy. Corn is unchanged (8 coins, 45s, pays 18 plus 15 energy). Coins per minute stay within 20% of each other, and a test checks this, so neither crop is a must-pick.
+- **Seed picker** (Corn / Wheat) on the Train tab, remembered per device.
+- **Tend all**: one tap harvests every ready plot, then replants the empty plots with the chosen seed while coins allow. Still three plots: no mutations, no automation.
+- Plot buttons show a live progress bar and m:ss timers. In 3D, sprouts grow with the timer, wheat has its own golden stalks, and plots pop when they change.
 
-### Bugs and feel
+### Rival mode (Rusty)
 
-- **Drag no longer trains.** Looking around the farm used to fire a click on the dummy / track / posts.
-- **Garden buttons no longer rebuild every second** (that stole focus and flickered).
-- **Champion rematch** highlights King Comb instead of hiding the last rematch chip.
-- **Unused shadow maps** on “high” quality were costing GPU with no casters. Fake blob shadows stay; real maps stay off.
-- Cloud drift no longer walks every `root` child each frame.
+- A recurring nemesis with his own rank curve (`nemesisFor(rank)` in game.js). His stats don't mirror yours, so training still matters. Rank 0 is beatable by a fresh chicken; each rank sits roughly one rung up the ladder.
+- **No bet.** A win pays `15 + 8·rank`, gives XP, and ranks him up; his style cycles Brawler → Sprinter → Tank. A loss costs only 20 energy, and he drops a rank. A 90s cooldown follows every bout. Throwing fights earns less than playing straight, so the mode can't be farmed. His record is separate from the ladder.
+- He stands at the yard fence with a "!" when ready; tapping him opens Fight → Rival. The red dots on the Fight tab and the Rival toggle only appear when a bout is actually possible (ready and 20⚡), so the badge clears when you're tired instead of nagging every 90 seconds.
 
-### Polish
+### Phone polish and small animations
 
-- **Rival preview**: open the Fight tab and the camera eases to the ring so you can see the next bird, not just a color swatch.
-- **Care poses** (Adopt Me–style, animation only): sleepy lean under 20 energy, hungrier pecks under 50, perkier hop at 80+. `careMood()` is the rule helper.
-- **Reduce motion**: 🎞️ / ⏸️ in the header. Follows `prefers-reduced-motion` until you override. Skips fight playback, snaps the camera.
-- **Champion ceremony**: after a crown, a short camera beat on the barn star.
-- Plant / harvest / egg collect walk the chicken to the station.
+- **Pre-existing bugs fixed:** the chicken's eyes stretched into tall black spikes (a blink set `scale.y = 1` instead of the eye's own height). Portrait phones saw only a thin slice of the yard: the FOV now widens to keep a 50° horizontal view. The header overflowed sideways at 390px.
+- Shorter stage on phones (46vh), safe-area padding, compact header (brand word hides under 375px).
+- Animations: pane fade-in, segmented controls with a sliding thumb, the coin chip bumps or dips, coins fly from the chicken to the chip, ready plots and the nest pulse, the result banner pops, the points badge bounces, the energy bar pulses when it's too low to fight, a toast spring, and press feedback. Short haptic ticks on supported phones follow the 🔊 toggle.
+- 🎞️ / reduce-motion now also adds `body.calm`, which turns off every CSS animation, the coin flight, and the haptics.
+
+### Research behind the UI
+
+Compressed design recon (Mobbin plus 21st.dev): an in-world call to action (Tolan), growth tied to the timer (Forest), challenge cards with rules and time left (Duolingo, Apple Games), and the sliding-thumb segmented control most component libraries share. The rival stakes went through a deliberate review; the one change it produced was gating the dots on energy.
 
 ### Tests and CI
 
-- `game.test.js` covers the nest (timer, one-egg cap, old saves, round-trip) and `careMood`.
-- CI is unchanged: `npm test` + `npm run build`.
+- New tests: crop balance and wheat timing, `tendAll`, rival win/loss/cooldown, rival save/load and forged saves. 27 tests total.
+- CI unchanged: `npm test` + `npm run build`.
+- Screenshots in `docs/screenshots/` (headless Chromium, SwiftShader).
 
 ## What is next
 
-1. A **second crop** (wheat?) that trades slower grow for more coins — still three plots, no mutations.
+1. A tiny **Rusty taunt line** (speech bubble text) when he appears, picked from a short list.
 2. **Hats or a comb style** on the look picker (cosmetic only, still free).
 3. Compress or tree-shake `vendor/three.module.min.js` if first paint is still heavy.
 4. Nameplate over the chicken in the yard.
@@ -59,9 +61,10 @@ Invariants:
 - Do not copy Roblox or Duck Life assets.
 - Keep npm test and npm run build green. The page must be served over HTTP (ES modules).
 - Phone performance matters: shared geometries, instancing, capped DPR, pause when hidden, estimateWinChance instead of Monte Carlo in the UI, no unused shadow maps.
-- Farm extras stay small: one waiting egg, three plots. No AFK tycoon, no mutations, no trading.
+- Farm extras stay small: one waiting egg, three plots, two crops. No AFK tycoon, no mutations, no trading.
+- Rival mode stays betless with a cooldown; notification dots only when a bout is possible.
 
-Pick up the next item in docs/HANDOFF.md (second crop, cosmetic comb/hat, Three.js weight, nameplate, or fight recap). Add tests for any new rules. Do not deploy.
+Pick up the next item in docs/HANDOFF.md (Rusty taunt line, cosmetic comb/hat, Three.js weight, nameplate, or fight recap). Add tests for any new rules. Do not deploy.
 ```
 
 ## Local check

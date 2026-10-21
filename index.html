@@ -10,7 +10,7 @@
 :root { --bg:#1d1630; --card:#2a2145; --card2:#352a57; --ink:#fff7e8; --dim:#b9add6; --red:#ff5a5f; --gold:#ffc93c; --green:#4cd17b; --blue:#4aa8ff; --purple:#a77bff; }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin:0; background: var(--bg); color: var(--ink); font-family: ui-rounded, "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif; }
-body { min-height: 100vh; padding: max(8px, env(safe-area-inset-top)) 10px 18px; overflow-x: hidden; }
+body { min-height: 100vh; min-height: 100dvh; padding: max(8px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); overflow-x: hidden; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 #app { max-width: 1060px; margin: 0 auto; }
 header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
 .brand { font-weight:900; font-size:20px; letter-spacing:.5px; color:var(--gold); text-shadow:0 2px 0 #b8501f; white-space:nowrap; }
@@ -103,10 +103,75 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
 .champ-box { display:none; margin-top:10px; background:linear-gradient(135deg,#4a3a10,#2a2145); border:2px solid var(--gold); border-radius:14px; padding:10px; }
 .champ-box b { color:var(--gold); }
 .champ-box .btn { width:100%; margin-top:8px; background:var(--gold); color:#3a2300; box-shadow:0 4px 0 #a5781a; }
-#toast { position:fixed; left:50%; bottom:22px; transform:translateX(-50%) translateY(20px); background:#120d20; border:2px solid var(--gold); padding:10px 16px; border-radius:14px; font-weight:900; opacity:0; transition: all .25s; pointer-events:none; max-width:92vw; text-align:center; z-index:20; }
+#toast { position:fixed; left:50%; bottom:max(22px, calc(env(safe-area-inset-bottom) + 12px)); transform:translateX(-50%) translateY(20px); background:#120d20; border:2px solid var(--gold); padding:10px 16px; border-radius:14px; font-weight:900; opacity:0; transition: all .25s; pointer-events:none; max-width:92vw; text-align:center; z-index:20; }
 #toast.show { opacity:1; transform:translateX(-50%) translateY(0); }
+/* ---------- farm loop ---------- */
+.farmbar { display:grid; grid-template-columns: 1fr auto; gap:6px; margin-top:10px; align-items:stretch; }
+.seg { position:relative; display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:4px; background:#120d20; border-radius:12px; padding:3px; --i:0; --n:2; }
+/* Sliding thumb (the pattern every segmented control we studied converges on). */
+.seg::before { content:''; position:absolute; top:3px; bottom:3px; left:3px; width:calc((100% - 6px - (var(--n) - 1) * 4px) / var(--n)); transform:translateX(calc(var(--i) * (100% + 4px))); background:var(--card2); border-radius:9px; box-shadow:0 2px 0 #0d0918; transition: transform .22s cubic-bezier(.3,1.3,.5,1); }
+.seg button { position:relative; z-index:1; background:transparent; color:var(--dim); border-radius:9px; padding:6px 4px; min-height:40px; font-weight:900; font-size:13px; line-height:1.1; transition: background .18s, color .18s; }
+.seg button small { display:block; font-size:10px; font-weight:800; opacity:.85; }
+.seg button.on { color:var(--ink); }
+.seg button:disabled { opacity:.5; }
+#tendBtn { min-height:46px; padding:6px 12px; font-size:14px; }
+.plot { position:relative; overflow:hidden; isolation:isolate; }
+.plot::before { content:''; position:absolute; left:0; bottom:0; height:4px; width:calc(var(--p, 0) * 100%); background:var(--green); border-radius:0 3px 3px 0; transition: width 1s linear; z-index:-1; }
+.plot.glow::before { background:var(--gold); }
+.plot.nest::before { background:#ffe7b0; }
+.fight-seg { margin-bottom:8px; }
+.dot { position:absolute; top:4px; right:6px; width:9px; height:9px; border-radius:50%; background:var(--red); box-shadow:0 0 0 2px var(--card); display:none; }
+.tab .dot { top:-3px; right:-3px; width:12px; height:12px; }
+.nemesis-note { display:none; margin-top:8px; background:linear-gradient(135deg,#4a1f18,#2a2145); border:2px solid #c8553d; border-radius:12px; padding:8px 10px; font-size:12px; font-weight:800; line-height:1.35; }
+.nemesis-note b { color:var(--gold); }
+.rival-mode .nemesis-note { display:block; }
+.rival-mode #ladder, .rival-mode #bets, .rival-mode #rematch, .rival-mode #champBox, .rival-mode #fightHint { display:none !important; }
+.rival-mode #fightBtn { background:#e0683f; box-shadow:0 4px 0 #8f3a1f; color:#fff; }
+.rival-mode #fightBtn:disabled { background:#4a4166; box-shadow:0 4px 0 #2b2442; color:#8e84ad; }
+
+/* ---------- small animations (all skipped by .calm / reduced motion) ---------- */
+.coinfly { position:fixed; z-index:30; pointer-events:none; font-size:18px; transform:translate(0,0); margin:-10px 0 0 -10px; transition: transform .62s cubic-bezier(.5,-0.4,.7,1), opacity .62s ease-in; }
+@keyframes paneIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@keyframes bump { 0% { transform:scale(1); } 35% { transform:scale(1.18); color:#fff3b0; } 100% { transform:scale(1); } }
+@keyframes dip { 0% { transform:translateY(0); } 40% { transform:translateY(2px); color:#ff9a9e; } 100% { transform:translateY(0); } }
+@keyframes glowPulse { 0%,100% { outline-color: var(--gold); box-shadow:0 0 0 0 rgba(255,201,60,.0); } 50% { outline-color:#fff3b0; box-shadow:0 0 0 4px rgba(255,201,60,.25); } }
+@keyframes pop { 0% { transform:translate(-50%,-50%) scale(.6); opacity:0; } 60% { transform:translate(-50%,-50%) scale(1.06); opacity:1; } 100% { transform:translate(-50%,-50%) scale(1); } }
+@keyframes bounce { 0%,100% { transform:translateY(0); } 30% { transform:translateY(-5px) scale(1.15); } 60% { transform:translateY(0); } 80% { transform:translateY(-2px); } }
+@keyframes lowPulse { 0%,100% { box-shadow: inset 0 0 0 0 rgba(255,90,95,0); } 50% { box-shadow: inset 0 0 0 2px rgba(255,90,95,.7); } }
+@keyframes dotPing { 0% { transform:scale(1); } 50% { transform:scale(1.35); } 100% { transform:scale(1); } }
+@keyframes toastIn { 0% { transform:translateX(-50%) translateY(20px) scale(.9); } 70% { transform:translateX(-50%) translateY(-3px) scale(1.02); } 100% { transform:translateX(-50%) translateY(0) scale(1); } }
+.pane.on { animation: paneIn .22s ease-out; }
+.chip.bump { animation: bump .45s ease-out; }
+.chip.dip { animation: dip .35s ease-out; }
+.plot.glow { animation: glowPulse 1.6s ease-in-out infinite; }
+#banner.pop { animation: pop .32s cubic-bezier(.2,1.2,.4,1); }
+.badge.bounce { animation: bounce .6s ease-out; }
+.barbox.low { animation: lowPulse 1.4s ease-in-out infinite; }
+.dot { animation: dotPing 1.2s ease-in-out infinite; }
+#toast.show { animation: toastIn .3s ease-out; }
+.btn:active:not(:disabled), .seg button:active:not(:disabled), .plot:active:not(:disabled), .bet:active:not(:disabled), .look:active:not(:disabled) { transform: translateY(2px) scale(.97); }
+.tab { transition: background .18s, color .18s, transform .08s; }
+.tab:active { transform: scale(.96); }
+.calm *, .calm *::before { animation: none !important; transition: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .btn, .bar i, #toast { transition: none; }
+  *, *::before { animation-duration: .001ms !important; animation-iteration-count: 1 !important; }
+}
+/* ---------- phone header + stage ---------- */
+@media (max-width: 859px) {
+  .stage { height: min(46vh, 420px); }
+}
+@media (max-width: 460px) {
+  header { gap:6px; }
+  .brand { font-size:16px; letter-spacing:0; }
+  .chips { gap:4px; }
+  .chip { padding:5px 8px; font-size:13px; }
+  #muteBtn, #qualBtn, #motionBtn { min-width:32px; min-height:32px; padding:4px 6px; font-size:13px; }
+  .farmbar { grid-template-columns: 1fr; }
+  #tendBtn { min-height:42px; }
+}
+@media (max-width: 374px) {
+  .brand .word { display:none; }
 }
 #banner { position:absolute; left:50%; top:42%; transform:translate(-50%,-50%) scale(.92); background:rgba(18,13,32,.82); border-radius:14px; padding:12px 18px; text-align:center; display:none; z-index:3; min-width:220px; pointer-events:none; }
 #banner.on { display:block; }
@@ -129,7 +194,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
 <body>
 <div id="app">
   <header>
-    <div class="brand">🐔 CLUCK LIFE</div>
+    <div class="brand">🐔<span class="word"> CLUCK LIFE</span></div>
     <div class="chips">
       <div class="chip" id="lvlChip">Lv 1</div>
       <div class="chip coins" id="coinChip">🪙 100</div>
@@ -158,7 +223,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
         </div>
       </div>
       <div class="bars">
-        <div class="barbox">⚡ Energy <span id="energyTxt">100/100</span><div class="bar"><i id="energyFill" style="width:100%"></i></div></div>
+        <div class="barbox" id="energyBox">⚡ Energy <span id="energyTxt">100/100</span><div class="bar"><i id="energyFill" style="width:100%"></i></div></div>
         <div class="barbox">⭐ XP <span id="xpTxt">0/100</span><div class="bar"><i id="xpFill" style="width:0%"></i></div></div>
       </div>
     </div>
@@ -166,7 +231,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
     <div class="panel">
       <div class="tabs">
         <button class="tab on" data-tab="train">Train</button>
-        <button class="tab" data-tab="fight">Fight</button>
+        <button class="tab" data-tab="fight">Fight<span class="dot" id="fightDot"></span></button>
         <button class="tab" data-tab="chicken">Chicken<span class="badge" id="ptsBadge">0</span></button>
       </div>
 
@@ -180,11 +245,22 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
           <button class="btn alt duo" id="feedBtn">🌽 Feed<small>15🪙 → +50⚡</small></button>
           <button class="btn alt duo" id="napBtn">💤 Nap<small>free, +25⚡</small></button>
         </div>
+        <div class="farmbar">
+          <div class="seg" id="seedSeg" role="group" aria-label="Seed to plant">
+            <button data-seed="corn">🌽 Corn<small>8🪙 · 45s · +18</small></button>
+            <button data-seed="wheat">🌾 Wheat<small>14🪙 · 2m · +40</small></button>
+          </div>
+          <button class="btn go" id="tendBtn">🧺 Tend all</button>
+        </div>
         <div class="plots" id="plots"></div>
-        <p class="hint">Train at the dummy, track, or posts — or tap the buttons. Plant corn (8🪙) in the yard; it is ready in 45s even if you leave. The coop lays one coin egg every minute — tap the nest when it glows. Peck = attack, Run = speed, Dodge = defense. Nap is free only when you are too tired to fight. The Fight tab peeks at the rival in the ring. Drag the farm to look around.</p>
+        <p class="hint">Train at the dummy, track, or posts — or tap the buttons. Pick a seed: corn is quick, wheat is slow but pays more. Crops grow even if you leave. <b>Tend all</b> harvests what is ready and replants the empty plots. The coop lays one coin egg every minute. When Rusty shows up at the fence, tap him for a rival bout. Nap is free only when you are too tired to fight. Drag the farm to look around.</p>
       </div>
 
       <div class="pane" id="pane-fight">
+        <div class="seg fight-seg" id="fightSeg" role="group" aria-label="Fight mode">
+          <button data-mode="ladder">🏆 Ladder</button>
+          <button data-mode="rival">🔥 Rival<span class="dot" id="rivalDot"></span></button>
+        </div>
         <div class="ladder" id="ladder"></div>
         <div class="rival">
           <div class="swatch" id="rivalPic">🐔</div>
@@ -193,6 +269,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
             <div class="sub" id="rivalSub">Rival 1 of 8 · purse 20🪙</div>
           </div>
         </div>
+        <div class="nemesis-note" id="nemesisNote"></div>
         <table class="vs" id="vsTable"></table>
         <div class="odds"><span id="oddsTxt">Odds: Easy</span><div class="bar"><i id="oddsFill" style="width:50%"></i></div></div>
         <div class="bets" id="bets"><span class="lbl">Bet</span></div>

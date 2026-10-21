@@ -7,6 +7,12 @@ const ARENA_X = 28;
 const YARD = { cam: new THREE.Vector3(3.2, 4.4, 6.8), look: new THREE.Vector3(0.15, 0.85, 0.45) };
 const RING = { cam: new THREE.Vector3(ARENA_X + 0.4, 4.0, 6.6), look: new THREE.Vector3(ARENA_X, 1.0, 0) };
 const BIRD = 1.85;
+const EYE_Y = 0.05;
+// Portrait phones see a thin slice of the yard at the desktop FOV. Widen
+// the vertical FOV until the horizontal view is at least this wide.
+const BASE_FOV = 38;
+const MIN_HFOV = 50;
+const MAX_FOV = 60;
 
 function hex(c) {
   return new THREE.Color(c);
@@ -142,8 +148,8 @@ export function createWorld(canvas, hooks) {
     const beak = mesh(geo.cone, '#ffb022', 0, -0.02, 0.3, 0.08, 0.18, 0.08);
     beak.rotation.x = Math.PI / 2;
     head.add(beak);
-    const eyeL = mesh(geo.sphere, '#1a1a1a', 0.12, 0.06, 0.2, 0.045, 0.05, 0.04);
-    const eyeR = mesh(geo.sphere, '#1a1a1a', -0.12, 0.06, 0.2, 0.045, 0.05, 0.04);
+    const eyeL = mesh(geo.sphere, '#1a1a1a', 0.12, 0.06, 0.2, 0.045, EYE_Y, 0.04);
+    const eyeR = mesh(geo.sphere, '#1a1a1a', -0.12, 0.06, 0.2, 0.045, EYE_Y, 0.04);
     const glintL = mesh(geo.sphere, '#ffffff', 0.13, 0.08, 0.23, 0.016, 0.016, 0.016);
     const glintR = mesh(geo.sphere, '#ffffff', -0.11, 0.08, 0.23, 0.016, 0.016, 0.016);
     head.add(eyeL, eyeR, glintL, glintR);
@@ -358,21 +364,49 @@ export function createWorld(canvas, hooks) {
     const p = new THREE.Group();
     p.position.set(-1.45 + i * 1.15, 0, 2.15);
     p.add(mesh(geo.box, '#8a5a32', 0, 0.08, 0, 1.1, 0.16, 1.0));
-    const sprout = mesh(geo.cone, '#5dcc55', 0, 0.32, 0, 0.12, 0.42, 0.12);
+    const sprout = mesh(geo.cone, '#5dcc55', 0, 0.12, 0, 0.12, 0.42, 0.12);
     const ready = new THREE.Group();
     ready.add(mesh(geo.box, '#6aa334', 0, 0.45, 0, 0.08, 0.7, 0.08));
     ready.add(mesh(geo.sphere, '#ffd34d', 0.12, 0.7, 0.05, 0.12, 0.1, 0.12));
     ready.add(mesh(geo.sphere, '#ffc93c', -0.1, 0.78, -0.04, 0.1, 0.09, 0.1));
+    // Wheat: a little bundle of golden stalks with heavier heads.
+    const wheat = new THREE.Group();
+    for (let k = 0; k < 4; k += 1) {
+      const wx = (k % 2 ? 0.14 : -0.14);
+      const wz = (k < 2 ? 0.12 : -0.12);
+      wheat.add(mesh(geo.box, '#c9a23a', wx, 0.36, wz, 0.04, 0.56, 0.04));
+      wheat.add(mesh(geo.sphere, '#f0c95a', wx, 0.68, wz, 0.07, 0.14, 0.07));
+    }
     sprout.visible = false;
     ready.visible = false;
-    p.add(sprout, ready);
+    wheat.visible = false;
+    p.add(sprout, ready, wheat);
     p.userData.kind = 'plot';
     p.userData.slot = i;
     p.userData.sprout = sprout;
     p.userData.ready = ready;
+    p.userData.wheat = wheat;
+    p.userData.state = 'empty';
+    p.userData.pop = 0;
     plots.push(p);
     root.add(p);
   }
+
+  // ---------- rival visitor ----------
+  // Rusty waits by the fence when a rival bout is ready. Tapping him opens
+  // the rival fight. Hidden (and never animated) while he is resting.
+  const visitor = makeChicken('#c8553d', '#ffd34d');
+  visitor.scale.setScalar(BIRD * 0.92);
+  visitor.position.set(1.85, 0, -3.35);
+  visitor.userData.kind = 'rival';
+  visitor.visible = false;
+  const bubble = new THREE.Group();
+  bubble.position.set(0, 1.62, 0.2);
+  bubble.add(mesh(geo.box, '#ffd34d', 0, 0.12, 0, 0.07, 0.2, 0.07));
+  bubble.add(mesh(geo.sphere, '#ffd34d', 0, -0.06, 0, 0.045, 0.045, 0.045));
+  visitor.add(bubble);
+  visitor.userData.bubble = bubble;
+  root.add(visitor);
 
   // ---------- arena ----------
   const arena = new THREE.Group();
@@ -411,7 +445,7 @@ export function createWorld(canvas, hooks) {
   root.add(arena);
 
   // pickables
-  const pickables = [dummy, posts, track, feeder, coop, plots[0], plots[1], plots[2]];
+  const pickables = [dummy, posts, track, feeder, coop, plots[0], plots[1], plots[2], visitor];
 
   // ---------- camera / input ----------
   const look = YARD.look.clone();
@@ -465,7 +499,8 @@ export function createWorld(canvas, hooks) {
     if (next === 'fight' || next === 'preview') {
       yaw = 0.1;
       pitch = 0.3;
-      dist = 7.0;
+      // Portrait phones: step back so the near ring posts do not block the birds.
+      dist = camera.aspect < 1.1 ? 8.6 : 7.0;
     } else {
       yaw = 0.46;
       pitch = 0.36;
@@ -513,7 +548,7 @@ export function createWorld(canvas, hooks) {
     ndc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     ndc.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(ndc, camera);
-    const hits = raycaster.intersectObjects(pickables, true);
+    const hits = raycaster.intersectObjects(pickables.filter((o) => o.visible), true);
     if (!hits.length) return;
     let obj = hits[0].object;
     while (obj && !obj.userData.kind) obj = obj.parent;
@@ -567,8 +602,10 @@ export function createWorld(canvas, hooks) {
     const sleepy = ch === me && careEnergy < 20 && mode === 'yard';
     const blinkGap = sleepy ? 1.6 : 3.6;
     const blink = (clock.t + ch.position.x) % blinkGap < (sleepy ? 0.22 : 0.12) || a.dead;
-    p.eyeL.scale.y = blink ? 0.15 : 1;
-    p.eyeR.scale.y = blink ? 0.15 : 1;
+    // Blink squashes the eye's own height; setting scale.y to 1 used to
+    // stretch the tiny eye into a tall black spike.
+    p.eyeL.scale.y = EYE_Y * (blink ? 0.15 : 1);
+    p.eyeR.scale.y = EYE_Y * (blink ? 0.15 : 1);
     p.glintL.visible = !blink;
     p.glintR.visible = !blink;
     p.body.material.emissive = hex(a.flash > 0 ? '#ffffff' : '#000000');
@@ -863,10 +900,70 @@ export function createWorld(canvas, hooks) {
     dist = 9.0;
   }
 
+  // Small farm life: plots pop when they change, sprouts grow with the
+  // timer, and Rusty taunts from the fence. All cheap transforms.
+  function stepFarm(dt) {
+    for (let i = 0; i < plots.length; i += 1) {
+      const p = plots[i];
+      if (p.userData.pop > 0) {
+        p.userData.pop = reduceMotion ? 0 : Math.max(0, p.userData.pop - dt * 3.2);
+        const k = p.userData.pop;
+        const s = 1 + Math.sin(k * Math.PI) * 0.18;
+        p.scale.set(s, 1 + Math.sin(k * Math.PI) * 0.3, s);
+      } else if (p.scale.x !== 1) p.scale.set(1, 1, 1);
+      const sp = p.userData.sprout;
+      if (sp.visible) {
+        const g = p.userData.progress || 0;
+        const h = 0.25 + g * 0.75;
+        sp.scale.set(0.12 + g * 0.06, 0.42 * h, 0.12 + g * 0.06);
+        sp.position.y = 0.12 + 0.21 * h;
+        if (!reduceMotion) sp.rotation.z = Math.sin(clock.t * 1.6 + i) * 0.08;
+      }
+      if (!reduceMotion && (p.userData.ready.visible || p.userData.wheat.visible)) {
+        const sway = Math.sin(clock.t * 1.3 + i * 0.7) * 0.06;
+        p.userData.ready.rotation.z = sway;
+        p.userData.wheat.rotation.z = sway;
+      }
+    }
+    if (visitor.visible && mode === 'yard') {
+      const a = visitor.userData.anim;
+      const beat = clock.t % 3.4;
+      a.hop = 0;
+      a.flap = false;
+      a.peck = 0;
+      if (!reduceMotion) {
+        if (beat < 0.7) { a.hop = Math.abs(Math.sin(beat * 9)) * 0.22; a.flap = true; }
+        else if (beat > 2.2 && beat < 2.6) a.peck = Math.max(0, Math.sin((beat - 2.2) * 16));
+        visitor.userData.bubble.position.y = 1.62 + Math.sin(clock.t * 3) * 0.05;
+      }
+      // Face the player's chicken.
+      a.face = me.position.x >= visitor.position.x ? 1 : -1;
+      poseChicken(visitor, dt);
+    }
+  }
+
+  function setGarden(states) {
+    states.forEach((raw, i) => {
+      const p = plots[i];
+      if (!p) return;
+      const st = typeof raw === 'string' ? { state: raw, crop: 'corn', progress: raw === 'ready' ? 1 : 0.5 } : raw;
+      const wheat = st.crop === 'wheat';
+      if (p.userData.state !== st.state && p.userData.state != null) p.userData.pop = 1;
+      p.userData.state = st.state;
+      p.userData.progress = st.progress || 0;
+      p.userData.sprout.visible = st.state === 'growing';
+      p.userData.sprout.material = mat(wheat ? '#a8c94a' : '#5dcc55');
+      p.userData.ready.visible = st.state === 'ready' && !wheat;
+      p.userData.wheat.visible = st.state === 'ready' && wheat;
+    });
+  }
+
   function resize() {
     const w = Math.max(1, canvas.clientWidth);
     const h = Math.max(1, canvas.clientHeight);
     camera.aspect = w / h;
+    const half = Math.tan((MIN_HFOV / 2) * Math.PI / 180) / camera.aspect;
+    camera.fov = Math.max(BASE_FOV, Math.min(MAX_FOV, 2 * Math.atan(half) * 180 / Math.PI));
     camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
   }
@@ -912,6 +1009,7 @@ export function createWorld(canvas, hooks) {
         partPool.push(p);
       }
     }
+    stepFarm(dt);
     for (let i = 0; i < clouds.length; i += 1) {
       const c = clouds[i];
       c.position.x = c.userData.baseX + Math.sin(clock.t * 0.12 * c.userData.drift) * 1.4;
@@ -930,16 +1028,12 @@ export function createWorld(canvas, hooks) {
   return {
     play: play,
     setLook: function (body, comb) { paintChicken(me, body, comb); },
-    setGarden: function (states) {
-      states.forEach((s, i) => {
-        if (!plots[i]) return;
-        plots[i].userData.sprout.visible = s === 'growing';
-        plots[i].userData.ready.visible = s === 'ready';
-      });
-    },
+    setGarden: setGarden,
     setEgg: function (ready) {
       if (coop.userData.egg) coop.userData.egg.visible = !!ready;
     },
+    setVisitor: function (on) { visitor.visible = !!on; },
+    visitorScreen: function () { return worldToScreen(visitor.position.clone().setY(1.8)); },
     setCare: function (energy) { careEnergy = Number(energy) || 0; },
     setReduceMotion: function (on) { reduceMotion = !!on; },
     getReduceMotion: function () { return reduceMotion; },
