@@ -316,3 +316,53 @@ test('the game stays open: createGame needs no passcode or gate', () => {
   assert.ok(game.canTrain(g.chicken));
   assert.ok(game.canFight(g.chicken, 10));
 });
+
+test('careMood is animation-only and never locks energy or fights', () => {
+  assert.equal(game.careMood(100), 'perky');
+  assert.equal(game.careMood(80), 'perky');
+  assert.equal(game.careMood(60), 'idle');
+  assert.equal(game.careMood(40), 'hungry');
+  assert.equal(game.careMood(10), 'sleepy');
+  assert.equal(game.careMood('nope'), 'idle');
+  const c = game.createChicken();
+  c.energy = 10;
+  assert.equal(game.careMood(c.energy), 'sleepy');
+  assert.equal(game.canRest(c), true);
+  assert.equal(game.canFight(c, 10), false);
+  assert.equal(game.canTrain(c), false);
+});
+
+test('coop nest: one egg at a time, pays after the lay timer, old saves start laying', () => {
+  const g = game.createGame('Farmer');
+  const t0 = 2_000_000;
+  g.coop = game.createCoop(t0);
+  assert.equal(game.coopState(g.coop, t0), 'laying');
+  assert.equal(game.canCollectEgg(g.coop, t0), false);
+  assert.equal(game.collectEgg(g.chicken, g.coop, t0).ok, false);
+  assert.equal(g.chicken.coins, 100);
+  assert.equal(game.coopReadyIn(g.coop, t0 + 1000) > 0, true);
+  assert.equal(game.coopState(g.coop, t0 + game.LAY_MS), 'ready');
+  const first = game.collectEgg(g.chicken, g.coop, t0 + game.LAY_MS);
+  assert.equal(first.ok, true);
+  assert.equal(first.coins, game.EGG_COINS);
+  assert.equal(g.chicken.coins, 100 + game.EGG_COINS);
+  // still only one egg — collecting resets the clock
+  assert.equal(game.canCollectEgg(g.coop, t0 + game.LAY_MS), false);
+  assert.equal(game.collectEgg(g.chicken, g.coop, t0 + game.LAY_MS).ok, false);
+  assert.equal(g.chicken.coins, 100 + game.EGG_COINS);
+  const later = game.collectEgg(g.chicken, g.coop, t0 + game.LAY_MS * 2);
+  assert.equal(later.ok, true);
+  assert.equal(g.chicken.coins, 100 + game.EGG_COINS * 2);
+
+  const old = game.loadGame(JSON.stringify({ chicken: { coins: 40 }, beaten: 0 }));
+  assert.ok(old.coop);
+  assert.equal(game.coopState(old.coop, Date.now()), 'laying');
+  const future = Date.now() + 999999;
+  const tamper = game.normalizeCoop({ lastCollectAt: future }, 5_000_000);
+  assert.ok(tamper.lastCollectAt <= 5_000_000);
+
+  g.coop.lastCollectAt = t0;
+  const saved = game.loadGame(game.saveGame(g));
+  assert.equal(saved.coop.lastCollectAt, t0);
+  assert.equal(game.collectEgg(saved.chicken, saved.coop, t0 + game.LAY_MS).ok, true);
+});

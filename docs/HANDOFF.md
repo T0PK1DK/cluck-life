@@ -2,45 +2,44 @@
 
 ## What this pass did
 
-Cluck Life is still the same raise / train / fight chicken game. It is now a **cozy low-poly 3D farm** in the browser, plus a small garden and a few bug/perf fixes.
+Overnight add-on pass on top of the cozy 3D farm. Same raise / train / fight loop. Still open — no passcode, no shop, no account, no deploy.
 
-### World
+### Feature (Egg Case Farm–style nest)
 
-- `world.js` draws the yard (barn, coop, fence, feeder, dummy, track, dodge posts, trees, flowers) and a fight ring offset to the side.
-- Chickens are authored from shared primitives (no GLTF, no downloaded art).
-- Camera eases between yard and ring. Drag to glance around (pitch/yaw clamped).
-- Phone path: lower pixel ratio, no shadows, fewer instances, no antialias. If frames stay slow, quality drops to phone on its own. ✨ / 📱 in the header locks it.
-- Hidden tabs stop the render loop.
-- Training stations and garden plots are clickable.
+- The unused coop now **lays one coin egg every 60 seconds**.
+- Collect 6 coins. Only one egg waits, so it never becomes an AFK tycoon.
+- Grows while the tab is closed. Click the nest in the yard or the Train-tab button.
+- Save version 3. Old v2 saves start a fresh lay timer instead of granting a free egg.
 
-### Rules (`game.js`)
+### Bugs and feel
 
-- Save version 2. Old `cluck-life-save-v1` files still load.
-- **Garden**: 3 plots, plant 8 coins, 45s grow, harvest 18 coins + 15 energy.
-- **Looks**: 6 colorways, cosmetic only.
-- **`estimateWinChance`**: closed-form odds so the Fight tab does not run 150 live simulations on every refresh (that hitch was bad on phones).
-- Mid-fight coin chip now shows the ante (`coinsBefore - bet`) instead of `coins - reward`, which lied on scrap-coin losses.
-- Game stays **open**. No passcode, no shop, no account.
+- **Drag no longer trains.** Looking around the farm used to fire a click on the dummy / track / posts.
+- **Garden buttons no longer rebuild every second** (that stole focus and flickered).
+- **Champion rematch** highlights King Comb instead of hiding the last rematch chip.
+- **Unused shadow maps** on “high” quality were costing GPU with no casters. Fake blob shadows stay; real maps stay off.
+- Cloud drift no longer walks every `root` child each frame.
+
+### Polish
+
+- **Rival preview**: open the Fight tab and the camera eases to the ring so you can see the next bird, not just a color swatch.
+- **Care poses** (Adopt Me–style, animation only): sleepy lean under 20 energy, hungrier pecks under 50, perkier hop at 80+. `careMood()` is the rule helper.
+- **Reduce motion**: 🎞️ / ⏸️ in the header. Follows `prefers-reduced-motion` until you override. Skips fight playback, snaps the camera.
+- **Champion ceremony**: after a crown, a short camera beat on the barn star.
+- Plant / harvest / egg collect walk the chicken to the station.
 
 ### Tests and CI
 
-- `game.test.js` covers the old loop plus looks, garden timing, odds vs Monte Carlo, and “no passcode”.
-- `.github/workflows/ci.yml` runs `npm test` and `npm run build`.
-
-### Docs
-
-- [RESEARCH.md](RESEARCH.md) — Roblox farm / pet / life sims, Duck Life, sources, borrowed features.
-- README links those games and the run commands.
+- `game.test.js` covers the nest (timer, one-egg cap, old saves, round-trip) and `careMood`.
+- CI is unchanged: `npm test` + `npm run build`.
 
 ## What is next
 
-1. **More farm life** without turning it into a tycoon: a second crop, or a coop that slowly lays a coin egg.
-2. **Care that you can see** (Adopt Me–style hunger/sleepy as *animation only*, not new soft-locks).
-3. **Rival preview** in the ring when the Fight tab is open, so the card is not just a color swatch.
-4. **Compress Three.js** or tree-shake a custom build if the 690KB vendor file is too heavy for first paint.
-5. **A real champion ceremony** (confetti already exists; a short camera beat would land better).
-6. **Accessibility**: a “reduce motion” flag that skips fight playback.
-7. Do **not** add a passcode, shop, or paywall. Do **not** deploy from this agent unless asked.
+1. A **second crop** (wheat?) that trades slower grow for more coins — still three plots, no mutations.
+2. **Hats or a comb style** on the look picker (cosmetic only, still free).
+3. Compress or tree-shake `vendor/three.module.min.js` if first paint is still heavy.
+4. Nameplate over the chicken in the yard.
+5. A tiny “last fight recap” line on the Fight tab (crits / dodges) without replaying.
+6. Do **not** add a passcode, shop, or paywall. Do **not** deploy from this agent unless asked.
 
 ## Prompt for the next model
 
@@ -59,9 +58,10 @@ Invariants:
 - No passcode, no shop, no personal names in public text.
 - Do not copy Roblox or Duck Life assets.
 - Keep npm test and npm run build green. The page must be served over HTTP (ES modules).
-- Phone performance matters: shared geometries, instancing, capped DPR, pause when hidden, estimateWinChance instead of Monte Carlo in the UI.
+- Phone performance matters: shared geometries, instancing, capped DPR, pause when hidden, estimateWinChance instead of Monte Carlo in the UI, no unused shadow maps.
+- Farm extras stay small: one waiting egg, three plots. No AFK tycoon, no mutations, no trading.
 
-Pick up the next item in docs/HANDOFF.md (farm life, visible care, rival preview, or reduce-motion). Add tests for any new rules. Do not deploy.
+Pick up the next item in docs/HANDOFF.md (second crop, cosmetic comb/hat, Three.js weight, nameplate, or fight recap). Add tests for any new rules. Do not deploy.
 ```
 
 ## Local check

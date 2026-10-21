@@ -34,6 +34,8 @@ The 2025–2026 Roblox breakout. Plant on a personal plot, wait (including offli
 
 Nearby farm titles with the same “plot you tend” fantasy: **Farming and Friends**, **Garden Horizons**, **Egg Case Farm** (chickens + eggs), **Bee Swarm Simulator** (collection + a place that feels busy).
 
+**Egg Case Farm** (and the “something waiting in the coop” beat from other chicken games) is the source for Cluck Life’s nest: the coop slowly lays **one** coin egg. Collect it, then wait again. No pile-up, no offline tycoon.
+
 **Borrow:** three real corn plots in the yard; plant with coins; grow on a timer (works while the tab is closed); harvest for coins and a sip of energy. Show empty / sprout / ready in 3D.
 
 **Leave alone:** mutations, trading, steal-at-night PvP, Robux shops, offline tycoon automation.
@@ -95,7 +97,8 @@ Roblox “go stand on the pad to train” games make the *place* teach the verb.
 | Duck Life | Cosmetic colors, not power | Free look picker on the Chicken tab. Looks do not change stats. |
 | Duck Life: Battle | Contest can be a brawl | Already true. Fights now play in a 3D ring with the same beat log. |
 | Grow a Garden | Personal plots that grow while away | Three corn plots. Plant 8 coins, ready in 45s, harvest 18 coins + 15 energy. |
-| Adopt Me | Care is visible | Feed walks to the trough; nap leans by the barn; idle wander / peck / blink. |
+| Egg Case Farm | A coop that produces something you collect | One coin egg every 60s. Cap of one waiting egg. Click the nest. |
+| Adopt Me | Care is visible | Feed walks to the trough; nap leans by the barn; low energy looks sleepy / hungry (animation only). |
 | Adopt Me | Name and appearance | Rename stays. Looks are saved with the chicken. |
 | Bloxburg | The home is the progress | Barn, coop, fence, feeder, garden, and a champion banner on the barn as you climb. |
 | Brookhaven | Zero-friction start | Game opens on the yard. No passcode, no account, no shop. |
