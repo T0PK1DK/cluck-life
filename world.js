@@ -3,9 +3,10 @@ import * as THREE from 'three';
 // Low-poly cozy farm + fight ring. Shared geometries, instancing, and a
 // quality ladder so phones stay smooth. No external models or textures.
 
-const ARENA_X = 34;
-const YARD = { cam: new THREE.Vector3(0.4, 8.2, 12.4), look: new THREE.Vector3(0.2, 0.7, 0.4) };
-const RING = { cam: new THREE.Vector3(ARENA_X, 5.6, 9.2), look: new THREE.Vector3(ARENA_X, 0.9, 0) };
+const ARENA_X = 28;
+const YARD = { cam: new THREE.Vector3(3.2, 4.4, 6.8), look: new THREE.Vector3(0.15, 0.85, 0.45) };
+const RING = { cam: new THREE.Vector3(ARENA_X + 0.4, 4.0, 6.6), look: new THREE.Vector3(ARENA_X, 1.0, 0) };
+const BIRD = 1.85;
 
 function hex(c) {
   return new THREE.Color(c);
@@ -21,27 +22,6 @@ function makeMatCache() {
     cache.set(key, m);
     return m;
   };
-}
-
-function grassCanvas() {
-  const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 256;
-  const g = c.getContext('2d');
-  g.fillStyle = '#6fbf4f';
-  g.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < 900; i += 1) {
-    g.fillStyle = 'hsl(' + (92 + Math.random() * 28) + ',48%,' + (38 + Math.random() * 20) + '%)';
-    g.fillRect(Math.random() * 256, Math.random() * 256, 2 + (Math.random() < 0.15 ? 2 : 0), 2);
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(10, 8);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.magFilter = THREE.LinearFilter;
-  tex.minFilter = THREE.LinearMipmapLinearFilter;
-  return tex;
 }
 
 function detectQuality() {
@@ -66,8 +46,8 @@ export function createWorld(canvas, hooks) {
   };
 
   const scene = new THREE.Scene();
-  scene.background = hex('#8fd2ff');
-  scene.fog = new THREE.Fog(0xbfe8ff, 18, 46);
+  scene.background = hex('#7ec8f5');
+  scene.fog = new THREE.Fog(0x9ed6f5, 14, 32);
 
   const camera = new THREE.PerspectiveCamera(38, 1, 0.15, 80);
   camera.position.copy(YARD.cam);
@@ -84,11 +64,12 @@ export function createWorld(canvas, hooks) {
   renderer.setClearColor(0x8fd2ff, 1);
   renderer.shadowMap.enabled = false;
 
-  const hemi = new THREE.HemisphereLight(0xfff3d2, 0x5d8a42, 1.15);
+  const hemi = new THREE.HemisphereLight(0xfff6dc, 0x3f8a38, 1.05);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xfff1c4, 1.05);
-  sun.position.set(10, 16, 7);
+  const sun = new THREE.DirectionalLight(0xfff1c4, 0.72);
+  sun.position.set(8, 12, 6);
   scene.add(sun);
+  scene.add(new THREE.AmbientLight(0x89b36a, 0.22));
 
   const root = new THREE.Group();
   scene.add(root);
@@ -117,7 +98,7 @@ export function createWorld(canvas, hooks) {
       sun.shadow.camera.top = 12;
       sun.shadow.camera.bottom = -12;
     }
-    scene.fog.far = phone ? 38 : 50;
+    scene.fog.far = phone ? 28 : 34;
   }
 
   // ---------- chickens ----------
@@ -209,24 +190,24 @@ export function createWorld(canvas, hooks) {
   }
 
   const me = makeChicken('#fff4e0', '#ff3b3b');
-  me.position.set(0.6, 0, 1.2);
+  me.scale.setScalar(BIRD);
+  me.position.set(0.25, 0, 0.55);
   root.add(me);
   let foe = null;
 
   // ---------- farm ----------
-  const ground = mesh(geo.plane, '#6fbf4f', 0, 0, 0, 36, 1, 28);
+  const ground = mesh(geo.plane, '#4caf4a', 0, 0, 0, 26, 1, 20);
   ground.rotation.x = -Math.PI / 2;
-  ground.material = new THREE.MeshLambertMaterial({ map: grassCanvas(), color: 0xffffff });
   ground.receiveShadow = true;
   root.add(ground);
-
-  // dirt path
-  const path = mesh(geo.box, '#c9a36a', 1.4, 0.02, 1.1, 4.8, 0.04, 10.5);
-  root.add(path);
+  const lawn = mesh(geo.circle, '#5dcc55', 0.1, 0.012, 0.2, 7.2, 1, 6.2);
+  lawn.rotation.x = -Math.PI / 2;
+  root.add(lawn);
+  root.add(mesh(geo.box, '#d2b07a', 0.35, 0.02, 0.15, 1.45, 0.03, 5.2));
 
   function buildBarn() {
     const barn = new THREE.Group();
-    barn.position.set(-7.2, 0, -5.4);
+    barn.position.set(-4.1, 0, -2.7);
     barn.add(mesh(geo.box, '#c0392b', 0, 1.35, 0, 3.4, 2.7, 2.6));
     const roof = mesh(geo.cone, '#8e2a20', 0, 3.15, 0, 2.6, 1.5, 2.2);
     roof.scale.set(2.15, 1, 1.7);
@@ -245,7 +226,7 @@ export function createWorld(canvas, hooks) {
 
   function buildCoop() {
     const coop = new THREE.Group();
-    coop.position.set(7.4, 0, -6.2);
+    coop.position.set(4.15, 0, -2.9);
     coop.add(mesh(geo.box, '#d9a15b', 0, 0.7, 0, 2.2, 1.4, 1.8));
     coop.add(mesh(geo.box, '#b8782f', 0, 1.55, 0, 2.5, 0.18, 2.1));
     coop.add(mesh(geo.box, '#5a2a10', 0, 0.55, 0.92, 0.55, 1.1, 0.08));
@@ -255,14 +236,14 @@ export function createWorld(canvas, hooks) {
   root.add(buildCoop());
 
   const feeder = new THREE.Group();
-  feeder.position.set(5.6, 0, 3.6);
+  feeder.position.set(2.95, 0, 1.85);
   feeder.add(mesh(geo.box, '#9a6b3d', 0, 0.22, 0, 1.3, 0.18, 0.8));
   feeder.add(mesh(geo.cyl, '#ffd34d', 0, 0.34, 0, 0.42, 0.12, 0.28));
   feeder.userData.kind = 'feed';
   root.add(feeder);
 
   const dummy = new THREE.Group();
-  dummy.position.set(-5.4, 0, 3.4);
+  dummy.position.set(-2.95, 0, 1.75);
   dummy.add(mesh(geo.cyl, '#8b5a2b', 0, 0.45, 0, 0.08, 0.9, 0.08));
   dummy.add(mesh(geo.sphere, '#c45c2a', 0, 1.15, 0, 0.42, 0.5, 0.38));
   dummy.add(mesh(geo.box, '#fff6e8', 0, 1.2, 0.3, 0.28, 0.18, 0.04));
@@ -270,14 +251,14 @@ export function createWorld(canvas, hooks) {
   root.add(dummy);
 
   const posts = new THREE.Group();
-  posts.position.set(0.2, 0, 6.2);
+  posts.position.set(0.05, 0, 2.85);
   for (let i = -1; i <= 1; i += 1) posts.add(mesh(geo.cyl, '#e8d5a6', i * 0.7, 0.55, 0, 0.07, 1.1, 0.07));
   posts.userData.kind = 'dodge';
   root.add(posts);
 
   const track = new THREE.Group();
-  track.position.set(-1.6, 0.03, -0.2);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.35, 0.22, 6, 20), mat('#d2b07a'));
+  track.position.set(-0.7, 0.03, 0.05);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.55, 0.16, 6, 18), mat('#c9a36a'));
   ring.rotation.x = Math.PI / 2;
   track.add(ring);
   track.userData.kind = 'run';
@@ -296,16 +277,16 @@ export function createWorld(canvas, hooks) {
     root.add(im);
     return im;
   }
-  const fenceN = quality === 'phone' ? 22 : 30;
+  const fenceN = quality === 'phone' ? 16 : 22;
   instancedBoxes(fenceN, '#e9d3a6', (d, i) => {
     const t = i / (fenceN - 1);
-    d.position.set(-10 + t * 20, 0.45, -8.4);
+    d.position.set(-6.2 + t * 12.4, 0.45, -4.55);
     d.scale.set(0.12, 0.9, 0.12);
     d.rotation.set(0, 0, 0);
   });
   instancedBoxes(2, '#e9d3a6', (d, i) => {
-    d.position.set(0, 0.72 - i * 0.28, -8.4);
-    d.scale.set(20.2, 0.08, 0.08);
+    d.position.set(0, 0.72 - i * 0.28, -4.55);
+    d.scale.set(12.6, 0.08, 0.08);
     d.rotation.set(0, 0, 0);
   });
 
@@ -314,7 +295,7 @@ export function createWorld(canvas, hooks) {
   {
     const d = new THREE.Object3D();
     for (let i = 0; i < tuftN; i += 1) {
-      d.position.set(-10 + Math.random() * 20, 0.14, -8 + Math.random() * 16);
+      d.position.set(-6 + Math.random() * 12, 0.14, -4.2 + Math.random() * 8.4);
       d.rotation.set(0.15, Math.random() * 6, 0);
       const s = 0.55 + Math.random() * 0.7;
       d.scale.set(0.07 * s, 0.28 * s, 0.07 * s);
@@ -330,7 +311,7 @@ export function createWorld(canvas, hooks) {
   {
     const d = new THREE.Object3D();
     for (let i = 0; i < flowerN; i += 1) {
-      d.position.set(-8 + Math.random() * 16, 0.2, -7 + Math.random() * 12);
+      d.position.set(-5 + Math.random() * 10, 0.2, -3.6 + Math.random() * 7);
       d.scale.setScalar(0.08 + Math.random() * 0.05);
       d.updateMatrix();
       flowers.setMatrixAt(i, d.matrix);
@@ -347,9 +328,12 @@ export function createWorld(canvas, hooks) {
     t.add(mesh(geo.sphere, '#58b85c', 0.35, 1.35, 0.15, 0.5, 0.42, 0.5));
     root.add(t);
   }
-  tree(9.2, -3.4);
-  tree(-9.4, 2.2);
-  if (quality !== 'phone') tree(8.6, 6.4);
+  tree(5.15, -1.35);
+  tree(-5.25, 1.15);
+  if (quality !== 'phone') tree(4.9, 3.1);
+  root.add(mesh(geo.cyl, '#3d9adf', 3.6, 0.06, 3.15, 1.15, 0.1, 0.85));
+  root.add(mesh(geo.box, '#e6c15a', -3.7, 0.28, -1.15, 0.7, 0.55, 0.48));
+  root.add(mesh(geo.box, '#d4a63c', -3.35, 0.22, -0.7, 0.55, 0.42, 0.4));
 
   const sunBall = mesh(geo.sphere, '#ffe36b', 11, 9.2, -10, 1.15, 1.15, 1.15);
   root.add(sunBall);
@@ -364,7 +348,7 @@ export function createWorld(canvas, hooks) {
   const plots = [];
   for (let i = 0; i < 3; i += 1) {
     const p = new THREE.Group();
-    p.position.set(-2.2 + i * 1.35, 0, 4.6);
+    p.position.set(-1.45 + i * 1.15, 0, 2.15);
     p.add(mesh(geo.box, '#8a5a32', 0, 0.08, 0, 1.1, 0.16, 1.0));
     const sprout = mesh(geo.cone, '#5dcc55', 0, 0.32, 0, 0.12, 0.42, 0.12);
     const ready = new THREE.Group();
@@ -385,9 +369,10 @@ export function createWorld(canvas, hooks) {
   // ---------- arena ----------
   const arena = new THREE.Group();
   arena.position.set(ARENA_X, 0, 0);
-  arena.add(mesh(geo.cyl, '#d8a86a', 0, 0.04, 0, 6.2, 0.08, 6.2));
-  arena.add(mesh(geo.cyl, '#b8884e', 0, 0.09, 0, 4.4, 0.08, 4.4));
-  const rail = new THREE.Mesh(new THREE.TorusGeometry(4.5, 0.08, 6, 24), mat('#8b5a2b'));
+  arena.add(mesh(geo.cyl, '#6fbf4f', 0, 0.0, 0, 8.5, 0.04, 8.5));
+  arena.add(mesh(geo.cyl, '#d8a86a', 0, 0.05, 0, 4.4, 0.1, 4.4));
+  arena.add(mesh(geo.cyl, '#c49658', 0, 0.1, 0, 3.15, 0.08, 3.15));
+  const rail = new THREE.Mesh(new THREE.TorusGeometry(3.25, 0.09, 6, 22), mat('#8b5a2b'));
   rail.rotation.x = Math.PI / 2;
   rail.position.y = 0.55;
   arena.add(rail);
@@ -397,7 +382,7 @@ export function createWorld(canvas, hooks) {
     const d = new THREE.Object3D();
     for (let i = 0; i < crowdN; i += 1) {
       const a = -0.9 + (i / (crowdN - 1)) * 1.8;
-      d.position.set(Math.sin(a) * 5.4, 1.05, -2.6 - Math.cos(a) * 0.4);
+      d.position.set(Math.sin(a) * 4.05, 1.05, -2.15 - Math.cos(a) * 0.35);
       d.scale.set(0.28, 0.34, 0.28);
       d.updateMatrix();
       crowd.setMatrixAt(i, d.matrix);
@@ -405,10 +390,10 @@ export function createWorld(canvas, hooks) {
     crowd.instanceMatrix.needsUpdate = true;
     arena.add(crowd);
   }
-  arena.add(mesh(geo.cyl, '#ffb022', -3.6, 1.15, -2.2, 0.07, 1.6, 0.07));
-  arena.add(mesh(geo.sphere, '#ff7a2a', -3.6, 2.05, -2.2, 0.22, 0.22, 0.22));
-  arena.add(mesh(geo.cyl, '#ffb022', 3.6, 1.15, -2.2, 0.07, 1.6, 0.07));
-  arena.add(mesh(geo.sphere, '#ff7a2a', 3.6, 2.05, -2.2, 0.22, 0.22, 0.22));
+  arena.add(mesh(geo.cyl, '#ffb022', -2.7, 1.15, -1.7, 0.07, 1.6, 0.07));
+  arena.add(mesh(geo.sphere, '#ff7a2a', -2.7, 2.05, -1.7, 0.22, 0.22, 0.22));
+  arena.add(mesh(geo.cyl, '#ffb022', 2.7, 1.15, -1.7, 0.07, 1.6, 0.07));
+  arena.add(mesh(geo.sphere, '#ff7a2a', 2.7, 2.05, -1.7, 0.22, 0.22, 0.22));
   root.add(arena);
 
   // pickables
@@ -417,9 +402,9 @@ export function createWorld(canvas, hooks) {
   // ---------- camera / input ----------
   const look = YARD.look.clone();
   const camTarget = YARD.cam.clone();
-  let yaw = 0.18;
-  let pitch = 0.52;
-  let dist = 14.2;
+  let yaw = 0.46;
+  let pitch = 0.36;
+  let dist = 8.1;
   let dragging = false;
   let lastX = 0;
   let lastY = 0;
@@ -440,13 +425,13 @@ export function createWorld(canvas, hooks) {
   function setMode(next) {
     mode = next;
     if (next === 'fight') {
-      yaw = 0.02;
-      pitch = 0.42;
-      dist = 11.2;
+      yaw = 0.1;
+      pitch = 0.3;
+      dist = 7.0;
     } else {
-      yaw = 0.18;
-      pitch = 0.52;
-      dist = 14.2;
+      yaw = 0.46;
+      pitch = 0.36;
+      dist = 8.1;
     }
   }
 
@@ -562,32 +547,32 @@ export function createWorld(canvas, hooks) {
     if (a.kind === 'peck') {
       a.peck = Math.max(0, Math.sin(a.t * 22));
       a.face = -1;
-      me.position.x += (-5.1 - me.position.x) * Math.min(1, dt * 6);
-      me.position.z += (3.4 - me.position.z) * Math.min(1, dt * 6);
+      me.position.x += (-2.7 - me.position.x) * Math.min(1, dt * 6);
+      me.position.z += (1.75 - me.position.z) * Math.min(1, dt * 6);
       if (a.t > 0.85) a.kind = null;
     } else if (a.kind === 'run') {
       a.run = true;
       a.flap = true;
       const p = a.t / 1.15;
       const ang = p * Math.PI * 2;
-      me.position.set(-1.6 + Math.sin(ang) * 2.35, 0, -0.2 + Math.cos(ang) * 2.35);
+      me.position.set(-0.7 + Math.sin(ang) * 1.55, 0, 0.05 + Math.cos(ang) * 1.55);
       a.face = Math.cos(ang) >= 0 ? 1 : -1;
-      if (a.t > 1.15) { a.kind = null; me.position.set(0.6, 0, 1.2); a.face = 1; }
+      if (a.t > 1.15) { a.kind = null; me.position.set(0.25, 0, 0.55); a.face = 1; }
     } else if (a.kind === 'dodge') {
       const p = a.t / 0.8;
       a.hop = Math.abs(Math.sin(p * Math.PI * 3)) * 0.45;
       a.flap = a.hop > 0.1;
-      me.position.set(0.2 + Math.sin(p * Math.PI * 3) * 0.7, 0, 5.6);
-      if (a.t > 0.8) { a.kind = null; me.position.set(0.6, 0, 1.2); }
+      me.position.set(0.05 + Math.sin(p * Math.PI * 3) * 0.55, 0, 2.7);
+      if (a.t > 0.8) { a.kind = null; me.position.set(0.25, 0, 0.55); }
     } else if (a.kind === 'eat') {
-      me.position.x += (5.4 - me.position.x) * Math.min(1, dt * 5);
-      me.position.z += (3.5 - me.position.z) * Math.min(1, dt * 5);
+      me.position.x += (2.75 - me.position.x) * Math.min(1, dt * 5);
+      me.position.z += (1.85 - me.position.z) * Math.min(1, dt * 5);
       a.face = 1;
       a.peck = a.t > 0.25 ? Math.max(0, Math.sin(a.t * 20)) : 0;
       if (a.t > 1.15) a.kind = null;
     } else if (a.kind === 'nap') {
-      me.position.x += (-5.6 - me.position.x) * Math.min(1, dt * 4);
-      me.position.z += (-4.2 - me.position.z) * Math.min(1, dt * 4);
+      me.position.x += (-3.2 - me.position.x) * Math.min(1, dt * 4);
+      me.position.z += (-1.8 - me.position.z) * Math.min(1, dt * 4);
       a.lean = 0.25;
       if (a.t > 1.4) a.kind = null;
     } else if (a.kind === 'level') {
@@ -598,7 +583,7 @@ export function createWorld(canvas, hooks) {
       a.peck = Math.max(0, Math.sin(a.t * 16));
       if (a.t > 0.7) a.kind = null;
     } else {
-      if (Math.abs(me.position.x - a.wander) < 0.08 && Math.random() < 0.008) a.wander = -1.2 + Math.random() * 3.4;
+      if (Math.abs(me.position.x - a.wander) < 0.08 && Math.random() < 0.008) a.wander = -0.6 + Math.random() * 1.6;
       const dx = (a.wander || 0.6) - me.position.x;
       if (Math.abs(dx) > 0.08) {
         me.position.x += Math.sign(dx) * dt * 0.7;
@@ -612,10 +597,11 @@ export function createWorld(canvas, hooks) {
   function startFight(result) {
     if (foe) root.remove(foe);
     foe = makeChicken(result.foe.color, result.foe.comb);
-    foe.position.set(ARENA_X + 2.15, 0, 0.1);
+    foe.scale.setScalar(BIRD);
+    foe.position.set(ARENA_X + 1.55, 0, 0.1);
     foe.userData.anim.face = -1;
     root.add(foe);
-    me.position.set(ARENA_X - 2.15, 0, 0.1);
+    me.position.set(ARENA_X - 1.55, 0, 0.1);
     Object.assign(me.userData.anim, { kind: null, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, face: 1 });
     setMode('fight');
     fighting = {
@@ -647,8 +633,8 @@ export function createWorld(canvas, hooks) {
     aFoe.peck = 0;
     aMe.flap = false;
     aFoe.flap = false;
-    const homeMe = ARENA_X - 2.15;
-    const homeFoe = ARENA_X + 2.15;
+    const homeMe = ARENA_X - 1.55;
+    const homeFoe = ARENA_X + 1.55;
     if (f.phase === 'intro') {
       me.position.x = homeMe;
       foe.position.x = homeFoe;
@@ -673,7 +659,7 @@ export function createWorld(canvas, hooks) {
       const dir = beat.who === 'you' ? 1 : -1;
       const lunge = p < 0.45 ? p / 0.45 : p < 0.6 ? 1 : 1 - (p - 0.6) / 0.4;
       const ease = 1 - (1 - Math.max(0, lunge)) * (1 - Math.max(0, lunge));
-      att.position.x = attHome + dir * 1.7 * ease;
+      att.position.x = attHome + dir * 1.25 * ease;
       attA.peck = p > 0.35 && p < 0.65 ? 1 : 0;
       attA.flap = p < 0.5;
       attA.face = dir;
@@ -727,8 +713,8 @@ export function createWorld(canvas, hooks) {
     f.phase = 'end';
     f.t = 0;
     f.done = true;
-    me.position.x = ARENA_X - 2.15;
-    if (foe) foe.position.x = ARENA_X + 2.15;
+    me.position.x = ARENA_X - 1.55;
+    if (foe) foe.position.x = ARENA_X + 1.55;
     me.userData.anim.hop = 0;
     if (foe) foe.userData.anim.hop = 0;
     if (emit.onHp) emit.onHp(f.result.pHp / f.maxYou, f.result.aHp / f.maxFoe);
@@ -738,7 +724,7 @@ export function createWorld(canvas, hooks) {
   function leaveFight() {
     fighting = null;
     if (foe) { root.remove(foe); foe = null; }
-    me.position.set(0.6, 0, 1.2);
+    me.position.set(0.25, 0, 0.55);
     Object.assign(me.userData.anim, { dead: 0, hop: 0, lean: 0, face: 1, kind: null });
     setMode('yard');
     if (emit.onBanner) emit.onBanner(null);
