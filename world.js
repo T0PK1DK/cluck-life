@@ -462,11 +462,7 @@ export function createWorld(canvas, hooks) {
 
   function setMode(next) {
     mode = next;
-    if (next === 'preview') {
-      yaw = 0.0;
-      pitch = 0.22;
-      dist = 5.6;
-    } else if (next === 'fight') {
+    if (next === 'fight' || next === 'preview') {
       yaw = 0.1;
       pitch = 0.3;
       dist = 7.0;
