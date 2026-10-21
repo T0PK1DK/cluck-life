@@ -155,8 +155,8 @@ export function createWorld(canvas, hooks) {
     head.add(eyeL, eyeR, glintL, glintR);
     g.add(head);
 
-    const legL = mesh(geo.cyl, '#f2a33a', 0.12, 0.18, 0.06, 0.035, 0.32, 0.035);
-    const legR = mesh(geo.cyl, '#f2a33a', -0.12, 0.18, 0.06, 0.035, 0.32, 0.035);
+    const legL = mesh(geo.box, '#f2a33a', 0.12, 0.18, 0.06, 0.07, 0.32, 0.07);
+    const legR = mesh(geo.box, '#f2a33a', -0.12, 0.18, 0.06, 0.07, 0.32, 0.07);
     const footL = mesh(geo.box, '#f2a33a', 0.12, 0.03, 0.12, 0.12, 0.04, 0.18);
     const footR = mesh(geo.box, '#f2a33a', -0.12, 0.03, 0.12, 0.12, 0.04, 0.18);
     g.add(legL, legR, footL, footR);
@@ -230,7 +230,7 @@ export function createWorld(canvas, hooks) {
     coop.add(mesh(geo.box, '#d9a15b', 0, 0.7, 0, 2.2, 1.4, 1.8));
     coop.add(mesh(geo.box, '#b8782f', 0, 1.55, 0, 2.5, 0.18, 2.1));
     coop.add(mesh(geo.box, '#5a2a10', 0, 0.55, 0.92, 0.55, 1.1, 0.08));
-    coop.add(mesh(geo.cyl, '#8a8f99', 0.7, 1.95, 0.2, 0.08, 0.7, 0.08));
+    coop.add(mesh(geo.box, '#8a8f99', 0.7, 1.95, 0.2, 0.1, 0.7, 0.1));
     return coop;
   }
   root.add(buildCoop());
@@ -244,15 +244,15 @@ export function createWorld(canvas, hooks) {
 
   const dummy = new THREE.Group();
   dummy.position.set(-2.95, 0, 1.75);
-  dummy.add(mesh(geo.cyl, '#8b5a2b', 0, 0.45, 0, 0.08, 0.9, 0.08));
+  dummy.add(mesh(geo.box, '#8b5a2b', 0, 0.45, 0, 0.1, 0.9, 0.1));
   dummy.add(mesh(geo.sphere, '#c45c2a', 0, 1.15, 0, 0.42, 0.5, 0.38));
   dummy.add(mesh(geo.box, '#fff6e8', 0, 1.2, 0.3, 0.28, 0.18, 0.04));
   dummy.userData.kind = 'peck';
   root.add(dummy);
 
   const posts = new THREE.Group();
-  posts.position.set(0.05, 0, 2.85);
-  for (let i = -1; i <= 1; i += 1) posts.add(mesh(geo.cyl, '#e8d5a6', i * 0.7, 0.55, 0, 0.07, 1.1, 0.07));
+  posts.position.set(-2.15, 0, 2.35);
+  for (let i = -1; i <= 1; i += 1) posts.add(mesh(geo.box, '#e8d5a6', i * 0.55, 0.38, 0, 0.12, 0.76, 0.12));
   posts.userData.kind = 'dodge';
   root.add(posts);
 
@@ -323,7 +323,7 @@ export function createWorld(canvas, hooks) {
   function tree(x, z) {
     const t = new THREE.Group();
     t.position.set(x, 0, z);
-    t.add(mesh(geo.cyl, '#7a4a22', 0, 0.55, 0, 0.16, 1.1, 0.16));
+    t.add(mesh(geo.box, '#7a4a22', 0, 0.55, 0, 0.28, 1.1, 0.28));
     t.add(mesh(geo.sphere, '#3f9a4a', 0, 1.55, 0, 0.85, 0.7, 0.85));
     t.add(mesh(geo.sphere, '#58b85c', 0.35, 1.35, 0.15, 0.5, 0.42, 0.5));
     root.add(t);
@@ -331,7 +331,9 @@ export function createWorld(canvas, hooks) {
   tree(5.15, -1.35);
   tree(-5.25, 1.15);
   if (quality !== 'phone') tree(4.9, 3.1);
-  root.add(mesh(geo.cyl, '#3d9adf', 3.6, 0.06, 3.15, 1.15, 0.1, 0.85));
+  const pond = mesh(geo.circle, '#3d9adf', 3.55, 0.03, 3.05, 1.15, 1, 0.85);
+  pond.rotation.x = -Math.PI / 2;
+  root.add(pond);
   root.add(mesh(geo.box, '#e6c15a', -3.7, 0.28, -1.15, 0.7, 0.55, 0.48));
   root.add(mesh(geo.box, '#d4a63c', -3.35, 0.22, -0.7, 0.55, 0.42, 0.4));
 
@@ -352,7 +354,7 @@ export function createWorld(canvas, hooks) {
     p.add(mesh(geo.box, '#8a5a32', 0, 0.08, 0, 1.1, 0.16, 1.0));
     const sprout = mesh(geo.cone, '#5dcc55', 0, 0.32, 0, 0.12, 0.42, 0.12);
     const ready = new THREE.Group();
-    ready.add(mesh(geo.cyl, '#6aa334', 0, 0.45, 0, 0.05, 0.7, 0.05));
+    ready.add(mesh(geo.box, '#6aa334', 0, 0.45, 0, 0.08, 0.7, 0.08));
     ready.add(mesh(geo.sphere, '#ffd34d', 0.12, 0.7, 0.05, 0.12, 0.1, 0.12));
     ready.add(mesh(geo.sphere, '#ffc93c', -0.1, 0.78, -0.04, 0.1, 0.09, 0.1));
     sprout.visible = false;
@@ -369,9 +371,15 @@ export function createWorld(canvas, hooks) {
   // ---------- arena ----------
   const arena = new THREE.Group();
   arena.position.set(ARENA_X, 0, 0);
-  arena.add(mesh(geo.cyl, '#6fbf4f', 0, 0.0, 0, 8.5, 0.04, 8.5));
-  arena.add(mesh(geo.cyl, '#d8a86a', 0, 0.05, 0, 4.4, 0.1, 4.4));
-  arena.add(mesh(geo.cyl, '#c49658', 0, 0.1, 0, 3.15, 0.08, 3.15));
+  const grassPad = mesh(geo.circle, '#6fbf4f', 0, 0.0, 0, 8.5, 1, 8.5);
+  grassPad.rotation.x = -Math.PI / 2;
+  arena.add(grassPad);
+  const dirt = mesh(geo.circle, '#d8a86a', 0, 0.03, 0, 3.4, 1, 3.4);
+  dirt.rotation.x = -Math.PI / 2;
+  arena.add(dirt);
+  const inner = mesh(geo.circle, '#c49658', 0, 0.04, 0, 2.4, 1, 2.4);
+  inner.rotation.x = -Math.PI / 2;
+  arena.add(inner);
   const rail = new THREE.Mesh(new THREE.TorusGeometry(3.25, 0.09, 6, 22), mat('#8b5a2b'));
   rail.rotation.x = Math.PI / 2;
   rail.position.y = 0.55;
@@ -390,10 +398,10 @@ export function createWorld(canvas, hooks) {
     crowd.instanceMatrix.needsUpdate = true;
     arena.add(crowd);
   }
-  arena.add(mesh(geo.cyl, '#ffb022', -2.7, 1.15, -1.7, 0.07, 1.6, 0.07));
-  arena.add(mesh(geo.sphere, '#ff7a2a', -2.7, 2.05, -1.7, 0.22, 0.22, 0.22));
-  arena.add(mesh(geo.cyl, '#ffb022', 2.7, 1.15, -1.7, 0.07, 1.6, 0.07));
-  arena.add(mesh(geo.sphere, '#ff7a2a', 2.7, 2.05, -1.7, 0.22, 0.22, 0.22));
+  arena.add(mesh(geo.box, '#ffb022', -2.4, 0.7, -1.5, 0.1, 1.4, 0.1));
+  arena.add(mesh(geo.sphere, '#ff7a2a', -2.4, 1.5, -1.5, 0.22, 0.22, 0.22));
+  arena.add(mesh(geo.box, '#ffb022', 2.4, 0.7, -1.5, 0.1, 1.4, 0.1));
+  arena.add(mesh(geo.sphere, '#ff7a2a', 2.4, 1.5, -1.5, 0.22, 0.22, 0.22));
   root.add(arena);
 
   // pickables
@@ -562,7 +570,7 @@ export function createWorld(canvas, hooks) {
       const p = a.t / 0.8;
       a.hop = Math.abs(Math.sin(p * Math.PI * 3)) * 0.45;
       a.flap = a.hop > 0.1;
-      me.position.set(0.05 + Math.sin(p * Math.PI * 3) * 0.55, 0, 2.7);
+      me.position.set(-2.15 + Math.sin(p * Math.PI * 3) * 0.45, 0, 2.35);
       if (a.t > 0.8) { a.kind = null; me.position.set(0.25, 0, 0.55); }
     } else if (a.kind === 'eat') {
       me.position.x += (2.75 - me.position.x) * Math.min(1, dt * 5);
