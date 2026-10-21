@@ -256,3 +256,63 @@ test('champion tiers: only after the crown, tougher rivals, bigger purses, saved
   assert.equal(game.loadGame(JSON.stringify({ chicken: {}, tier: 999 })).tier, game.MAX_TIER);
   assert.equal(game.loadGame(JSON.stringify({ chicken: {} })).tier, 0);
 });
+
+test('looks are cosmetic and persist through save', () => {
+  const g = game.createGame('Snow');
+  assert.equal(g.chicken.lookId, 0);
+  assert.equal(game.setLook(g.chicken, 99).ok, false);
+  assert.equal(game.setLook(g.chicken, 4).ok, true);
+  assert.equal(g.chicken.lookId, 4);
+  assert.equal(game.lookFor(4).name, 'Ink');
+  const back = game.loadGame(game.saveGame(g));
+  assert.equal(back.chicken.lookId, 4);
+  const old = game.loadGame(JSON.stringify({ chicken: { level: 2 }, beaten: 0 }));
+  assert.equal(old.chicken.lookId, 0);
+  assert.equal(old.garden.plots.length, game.PLOT_COUNT);
+});
+
+test('garden: plant costs coins, harvest pays after the grow timer', () => {
+  const g = game.createGame('Farmer');
+  const t0 = 1_000_000;
+  assert.equal(game.canPlant(g.chicken, g.garden, 0), true);
+  assert.equal(game.plant(g.chicken, g.garden, 0, t0).ok, true);
+  assert.equal(g.chicken.coins, 92);
+  assert.equal(game.plotState(g.garden.plots[0], t0 + 1000), 'growing');
+  assert.equal(game.harvest(g.chicken, g.garden, 0, t0 + 1000).ok, false);
+  const ready = game.harvest(g.chicken, g.garden, 0, t0 + game.GROW_MS);
+  assert.equal(ready.ok, true);
+  assert.equal(g.chicken.coins, 92 + game.HARVEST_COINS);
+  assert.equal(g.chicken.energy, 100);
+  assert.equal(g.garden.plots[0], null);
+  assert.equal(game.plant(g.chicken, g.garden, 7, t0).ok, false);
+  g.chicken.coins = 0;
+  assert.equal(game.plant(g.chicken, g.garden, 1, t0).ok, false);
+});
+
+test('estimateWinChance tracks simulate without running a Monte Carlo on the UI thread', () => {
+  function rate(you, foe, n) {
+    const rng = seeded(11);
+    let w = 0;
+    for (let i = 0; i < n; i += 1) if (game.simulate(you, foe, rng).won) w += 1;
+    return w / n;
+  }
+  const chick = game.createChicken();
+  const pip = rate(chick, game.RIVALS[0], 240);
+  const nug = rate(chick, game.RIVALS[1], 240);
+  const ePip = game.estimateWinChance(chick, game.RIVALS[0]);
+  const eNug = game.estimateWinChance(chick, game.RIVALS[1]);
+  assert.ok(ePip > 0.7 && eNug < 0.35);
+  assert.ok(Math.abs(ePip - pip) < 0.2);
+  assert.ok(Math.abs(eNug - nug) < 0.2);
+  const strong = { hp: 400, atk: 40, def: 20, spd: 30 };
+  assert.ok(game.estimateWinChance(strong, game.RIVALS[0]) > 0.9);
+});
+
+test('the game stays open: createGame needs no passcode or gate', () => {
+  const g = game.createGame('Clucky');
+  assert.equal(g.name, 'Clucky');
+  assert.equal(g.chicken.coins, 100);
+  assert.equal(g.beaten, 0);
+  assert.ok(game.canTrain(g.chicken));
+  assert.ok(game.canFight(g.chicken, 10));
+});
