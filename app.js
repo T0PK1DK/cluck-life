@@ -6,6 +6,7 @@ const MUTE_KEY = 'cluck-life-muted';
 const QUAL_KEY = 'cluck-life-quality';
 const MOTION_KEY = 'cluck-life-motion';
 const SEED_KEY = 'cluck-life-seed';
+const GORE_KEY = 'cluck-life-gore';
 const $ = (id) => document.getElementById(id);
 
 let game = null;
@@ -92,6 +93,19 @@ const sfx = (function () {
     dodge() { tone(400, 0.14, 'sine', 0.06, 1200); },
     coin() { tone(988, 0.06, 'square', 0.05); tone(1319, 0.12, 'square', 0.05, null, 0.06); },
     nap() { tone(330, 0.3, 'sine', 0.05, 220); },
+    crowd() {
+      // A short roar: band-passed noise that swells and fades.
+      const a = ctx(); if (!a) return;
+      const dur = 1.1;
+      const n = Math.floor(a.sampleRate * dur);
+      const buf = a.createBuffer(1, n, a.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) { const env = Math.sin(Math.PI * i / n); d[i] = (Math.random() * 2 - 1) * env; }
+      const s = a.createBufferSource(), g = a.createGain(), f = a.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 650; f.Q.value = 0.6;
+      s.buffer = buf; g.gain.value = 0.16;
+      s.connect(f); f.connect(g); g.connect(a.destination); s.start();
+    },
     bell() { tone(1046, 0.4, 'triangle', 0.07); tone(1568, 0.3, 'sine', 0.04); },
     level() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.12, 'square', 0.06, null, i * 0.08)); },
     win() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => tone(f, 0.13, 'square', 0.06, null, i * 0.1)); },
@@ -383,9 +397,13 @@ function updateUI() {
   }
   $('rivalPic').style.background = foe.color;
   const rows = [['❤️ HP', c.hp, foe.hp], ['🥊 ATK', c.atk, foe.atk], ['🛡️ DEF', c.def, foe.def], ['💨 SPD', c.spd, foe.spd]];
-  $('vsTable').innerHTML = '<tr><td></td><td>' + game.name + '</td><td>' + foe.name + '</td></tr>' + rows.map((r) => '<tr><td>' + r[0] + '</td><td class="' + (r[1] >= r[2] ? 'up' : 'down') + '">' + fmt(r[1]) + '</td><td>' + r[2] + '</td></tr>').join('');
   const p = CL.estimateWinChance(c, foe);
-  const word = p >= 0.75 ? 'Easy' : p >= 0.5 ? 'Even fight' : p >= 0.25 ? 'Risky' : p > 0.02 ? 'Very tough' : 'Way too strong, train more';
+  // Tale of the tape: stats side by side, with each fighter's betting line.
+  $('vsTable').innerHTML = '<tr class="tape"><td colspan="3">TALE OF THE TAPE</td></tr>' +
+    '<tr><td></td><td><span class="corner red"></span>' + game.name + '</td><td><span class="corner blue"></span>' + foe.name + '</td></tr>' +
+    rows.map((r) => '<tr><td>' + r[0] + '</td><td class="' + (r[1] >= r[2] ? 'up' : 'down') + '">' + fmt(r[1]) + '</td><td>' + r[2] + '</td></tr>').join('') +
+    '<tr class="line"><td>📈 Line</td><td>' + CL.moneylineText(p) + '</td><td>' + CL.moneylineText(1 - p) + '</td></tr>';
+  const word = p >= 0.75 ? 'Heavy favourite' : p >= 0.5 ? 'Slight favourite' : p >= 0.25 ? 'Underdog' : p > 0.02 ? 'Big underdog' : 'Way too strong, train more';
   $('oddsTxt').textContent = 'Odds: ' + word + ' (' + Math.round(p * 100) + '%)';
   $('oddsFill').style.width = Math.max(4, p * 100) + '%';
   $('oddsFill').style.background = p >= 0.5 ? 'var(--green)' : p >= 0.25 ? 'var(--gold)' : 'var(--red)';
@@ -419,6 +437,7 @@ function updateUI() {
   $('ptsBadge').textContent = c.points;
   document.querySelectorAll('.plus').forEach((b) => { b.disabled = lock || c.points <= 0; });
   $('renameBtn').disabled = lock; $('resetBtn').disabled = lock;
+  $('goreBtn').disabled = lock;
   paintLooks();
   paintGarden();
 }
@@ -459,8 +478,8 @@ function syncPreview() {
   if (f) return;
   if (Date.now() < holdPreviewUntil) return;
   if (fightTabOn()) {
-    const { foe } = currentFoe();
-    world.showRival(foe.color, foe.comb);
+    const { foe, nemesis } = currentFoe();
+    world.showRival(foe.color, foe.comb, !!nemesis);
   } else {
     world.hideRival();
   }
@@ -615,6 +634,17 @@ function startBrawl() {
   displayCoins = Math.max(0, coinsBefore - r.bet);
   if (r.won && !r.rematch && r.mode !== 'nemesis') rematchIdx = null;
   buzz(20);
+  // Presentation only: round per beat, a commentary line, and the finish.
+  r.beatRounds = r.log.map((b) => CL.roundOf(b.ex));
+  r.summary = CL.fightSummary(r);
+  r.calls = r.log.map((b, i) => {
+    const att = b.who === 'you' ? game.name : r.foe.name;
+    const def = b.who === 'you' ? r.foe.name : game.name;
+    const move = CL.moveName(b, i);
+    if (b.kind === 'dodge') return def + ' ' + move + '!';
+    if (b.kind === 'crit') return att + ' lands a ' + move.toUpperCase() + '!';
+    return att + ' lands a ' + move + '.';
+  });
   save();
   sfx.bell();
   r.youMax = game.chicken.hp;
@@ -649,17 +679,21 @@ $('skipBtn').addEventListener('click', () => { if (world) world.skipFight(); });
 
 function onFightOver(r) {
   $('skipBtn').style.display = 'none';
+  $('callTxt').classList.remove('on');
+  const how = r.summary ? r.summary.text : '';
+  const winnerName = r.won ? game.name : r.foe.name;
+  const method = r.summary && r.summary.method !== 'DEC' ? ' by ' + r.summary.method : r.summary ? ' on the cards' : '';
   if (r.mode === 'nemesis') {
     const next = CL.nemesisFor(r.rank);
     showBanner(r.won
-      ? { text: 'RUSTY BEATEN! 🔥', sub: '+' + r.reward + ' coins · +' + r.xp + ' XP · he will be back as a ' + next.styleLabel.toLowerCase(), good: true, tap: true }
-      : { text: 'RUSTY WINS', sub: 'No coins lost · +' + r.xp + ' XP · he eases off a rank', good: false, tap: true });
+      ? { text: 'RUSTY BEATEN! 🔥', sub: how + ' · +' + r.reward + ' coins · +' + r.xp + ' XP · he will be back as a ' + next.styleLabel.toLowerCase(), good: true, tap: true }
+      : { text: 'RUSTY WINS', sub: how + ' · no coins lost · +' + r.xp + ' XP · he eases off a rank', good: false, tap: true });
     if (r.won) sfx.win(); else sfx.lose();
   } else if (r.won) {
-    showBanner({ text: r.newChampion ? 'CHAMPION! 👑' : 'VICTORY!', sub: '+' + r.reward + ' coins · +' + r.xp + ' XP' + (r.unlocked ? ' · ' + r.unlocked + ' unlocked' : ''), good: true, tap: true });
+    showBanner({ text: r.newChampion ? 'CHAMPION! 👑' : 'VICTORY' + method.toUpperCase() + '!', sub: winnerName + ' wins · ' + how + ' · +' + r.reward + ' coins · +' + r.xp + ' XP' + (r.unlocked ? ' · ' + r.unlocked + ' unlocked' : ''), good: true, tap: true });
     sfx.win();
   } else {
-    showBanner({ text: 'DEFEAT', sub: 'Lost ' + r.bet + ' coins · +' + r.xp + ' XP · train and try again', good: false, tap: true });
+    showBanner({ text: 'DEFEAT', sub: winnerName + ' wins · ' + how + ' · lost ' + r.bet + ' coins · +' + r.xp + ' XP', good: false, tap: true });
     sfx.lose();
   }
   buzz(r.won ? [20, 60, 20, 60, 40] : 60);
@@ -673,6 +707,7 @@ function onContinue() {
   world.leaveFight();
   showBanner(null);
   setHp(null, null);
+  $('callTxt').classList.remove('on');
   displayCoins = game.chicken.coins;
   if (champWin && world && world.celebrateChampion) {
     world.celebrateChampion();
@@ -706,6 +741,15 @@ try {
     onHp: setHp,
     onSfx(name) { if (sfx[name]) sfx[name](); if (name === 'crit') buzz(25); },
     onFloat: floatAt,
+    onCall(text, beat) {
+      if (!text) return;
+      const el = $('callTxt');
+      el.textContent = text;
+      el.classList.toggle('big', beat && beat.kind === 'crit');
+      el.classList.add('on');
+      kick(el, 'pop');
+    },
+    onRound(n) { $('roundTag').textContent = 'R' + n + ' / ' + CL.FIGHT_ROUNDS; },
     onFightOver,
   });
 } catch (err) {
@@ -726,6 +770,24 @@ try {
     const now = (world && world.getQuality()) === 'phone' ? 'high' : 'phone';
     q = now;
     try { localStorage.setItem(QUAL_KEY, q); } catch (e) {}
+    apply();
+    sfx.tap();
+  });
+})();
+
+(function goreToggle() {
+  let on = true;
+  try { on = localStorage.getItem(GORE_KEY) !== '0'; } catch (e) {}
+  function apply() {
+    if (world && world.setGore) world.setGore(on);
+    $('goreBtn').textContent = on ? '🩸 Cartoon gore: on' : '🪶 Cartoon gore: off (feathers only)';
+    $('goreBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  apply();
+  $('goreBtn').addEventListener('click', () => {
+    if (busy()) return;
+    on = !on;
+    try { localStorage.setItem(GORE_KEY, on ? '1' : '0'); } catch (e) {}
     apply();
     sfx.tap();
   });

@@ -13,6 +13,10 @@
   const REST_ENERGY = 25;
   const SCRAP_COINS = 5;
   const MAX_ROUNDS = 40;
+  // Cage presentation: the 40 exchanges play as 5 rounds of 8. Only the
+  // pacing and the scorecards use this; the fight math is unchanged.
+  const ROUND_EXCHANGES = 8;
+  const FIGHT_ROUNDS = MAX_ROUNDS / ROUND_EXCHANGES;
   const SAVE_VERSION = 4;
   const TRAIN_TYPES = { peck: 'atk', run: 'spd', dodge: 'def' };
   // Tap-timing training: how well you timed the tap scales the gain.
@@ -551,7 +555,7 @@
     function swing(att, def) {
       const r1 = roll();
       if (r1 < dodgeChance(def.spd, att.spd)) {
-        beats.push({ who: att.side, kind: 'dodge', dmg: 0, youHp: a.hp, foeHp: b.hp });
+        beats.push({ who: att.side, kind: 'dodge', dmg: 0, youHp: a.hp, foeHp: b.hp, ex: rounds });
         return;
       }
       const crit = roll() < 0.1;
@@ -559,7 +563,7 @@
       if (crit) dmg *= 1.6;
       dmg = Math.max(1, Math.round(dmg));
       def.hp = Math.max(0, def.hp - dmg);
-      beats.push({ who: att.side, kind: crit ? 'crit' : 'hit', dmg: dmg, youHp: a.hp, foeHp: b.hp });
+      beats.push({ who: att.side, kind: crit ? 'crit' : 'hit', dmg: dmg, youHp: a.hp, foeHp: b.hp, ex: rounds });
     }
 
     let rounds = 0;
@@ -583,6 +587,96 @@
     else if (b.hp <= 0) won = true;
     else won = a.hp / a.max > b.hp / b.max; // time out: better health share wins, ties lose
     return { won: won, rounds: rounds, firstSide: first.side, beats: beats, youHp: a.hp, foeHp: b.hp };
+  }
+
+  // Which cage round (1..5) an exchange falls in.
+  function roundOf(ex) {
+    const e = Math.max(1, ex | 0);
+    return Math.min(FIGHT_ROUNDS, Math.floor((e - 1) / ROUND_EXCHANGES) + 1);
+  }
+
+  // Betting-line odds from a win chance, the way fight cards print them.
+  // Favourites are negative (bet that much to win 100), underdogs positive.
+  function moneyline(p) {
+    const q = Math.max(0.01, Math.min(0.99, Number(p) || 0.5));
+    if (q >= 0.5) return -Math.round((100 * q) / (1 - q));
+    return Math.round((100 * (1 - q)) / q);
+  }
+  function moneylineText(p) {
+    const m = moneyline(p);
+    return m > 0 ? '+' + m : String(m);
+  }
+
+  const MOVES = {
+    hit: ['jab peck', 'wing slap', 'spur kick', 'body peck', 'head peck', 'leg kick'],
+    crit: ['flying spur kick', 'spinning wing slap', 'beak uppercut', 'takedown and ground peck'],
+    dodge: ['slips the peck', 'hops back', 'ducks under it', 'checks the kick'],
+  };
+  // Commentary name for a beat. Deterministic, so a replay reads the same.
+  function moveName(beat, i) {
+    const list = MOVES[beat && beat.kind] || MOVES.hit;
+    const seed = ((i | 0) * 7 + ((beat && beat.dmg) | 0) * 3 + ((beat && beat.ex) | 0)) >>> 0;
+    return list[seed % list.length];
+  }
+
+  // How the fight ended, plus three judges' cards when it went the distance.
+  // A round goes 10-9 to whoever did more damage (10-8 when it was double),
+  // 10-10 when even. Judges 2 and 3 score close rounds a touch differently
+  // so split decisions can happen.
+  function fightSummary(result) {
+    const log = (result && result.log) || [];
+    const last = log[log.length - 1];
+    const won = !!(result && result.won);
+    const lastRound = last ? roundOf(last.ex) : 1;
+    const finished = !!last && (last.youHp <= 0 || last.foeHp <= 0);
+    if (finished) {
+      return {
+        method: last.kind === 'crit' ? 'KO' : 'TKO',
+        round: lastRound,
+        winner: won ? 'you' : 'foe',
+        cards: null,
+        text: (last.kind === 'crit' ? 'KO' : 'TKO') + ' · round ' + lastRound,
+      };
+    }
+    const dmg = [];
+    for (let r = 0; r < FIGHT_ROUNDS; r += 1) dmg.push({ you: 0, foe: 0 });
+    log.forEach((b) => { if (b.dmg) dmg[roundOf(b.ex) - 1][b.who] += b.dmg; });
+    const rounds = dmg.slice(0, lastRound);
+    const cards = [0, 1, 2].map((j) => {
+      let you = 0;
+      let foe = 0;
+      rounds.forEach((d, r) => {
+        const total = d.you + d.foe;
+        let diff = total ? (d.you - d.foe) / total : 0;
+        // Judges 2 and 3 lean a little on alternate rounds.
+        if (j > 0) diff += ((r + j) % 2 ? 0.08 : -0.08);
+        if (Math.abs(diff) < 0.05) { you += 10; foe += 10; }
+        else if (diff > 0) { you += 10; foe += diff > 0.33 ? 8 : 9; }
+        else { foe += 10; you += -diff > 0.33 ? 8 : 9; }
+      });
+      return [you, foe];
+    });
+    // The winner is decided by the rules (health share); the cards are
+    // flavour, so make sure they never contradict the result.
+    const forWinner = cards.filter((c) => (won ? c[0] > c[1] : c[1] > c[0])).length;
+    if (forWinner < 2) {
+      for (let j = 0; j < 3 && cards.filter((c) => (won ? c[0] > c[1] : c[1] > c[0])).length < 2; j += 1) {
+        const c = cards[j];
+        if (won ? c[0] <= c[1] : c[1] <= c[0]) {
+          // Take a point off the loser rather than give one past 10 a round.
+          if (won) c[1] = c[0] - 1; else c[0] = c[1] - 1;
+        }
+      }
+    }
+    const agree = cards.filter((c) => (won ? c[0] > c[1] : c[1] > c[0])).length;
+    const kind = agree === 3 ? 'Unanimous' : 'Split';
+    return {
+      method: 'DEC',
+      round: lastRound,
+      winner: won ? 'you' : 'foe',
+      cards: cards,
+      text: kind + ' decision · ' + cards.map((c) => (won ? c[0] + '-' + c[1] : c[1] + '-' + c[0])).join(', '),
+    };
   }
 
   // fight(chicken, bet, rng, rival, isRematch)
@@ -740,6 +834,13 @@
     EGG_COINS: EGG_COINS,
     LOOKS: LOOKS,
     CROPS: CROPS,
+    ROUND_EXCHANGES: ROUND_EXCHANGES,
+    FIGHT_ROUNDS: FIGHT_ROUNDS,
+    roundOf: roundOf,
+    moneyline: moneyline,
+    moneylineText: moneylineText,
+    moveName: moveName,
+    fightSummary: fightSummary,
     NEMESIS: NEMESIS,
     NEMESIS_COOLDOWN_MS: NEMESIS_COOLDOWN_MS,
     NEMESIS_MAX_RANK: NEMESIS_MAX_RANK,

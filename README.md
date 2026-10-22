@@ -13,6 +13,8 @@ Play it as a static site from `dist/` or from this folder.
 - **Looks** on the Chicken tab are cosmetic only. The Fight tab previews the rival in the ring.
 - **Fight** (20 energy) the next rival with a coin bet. The faster chicken pecks first; speed also helps dodges. Win = bet back ×2 + the purse.
 - **Rival mode**: Rusty, a red rooster, waits by the fence when he wants a bout. Tap him, or use Fight → 🔥 Rival. No bet. A win pays his purse and he returns a rank tougher, cycling brawler / sprinter / tank. A loss costs only energy and he eases off a rank. He needs 90 seconds between bouts.
+- **Cage fights**: every bout plays in the CLUCK FC cage under the lights, with a crowd, a referee, a tale of the tape, and betting lines. Up to 5 rounds of 8 exchanges with the bell between rounds, live commentary, and a slow-motion finish. Fights end by KO (finishing crit), TKO, or a judges' decision with three scorecards. You don't control the fight: odds and results come from your trained stats.
+- **Cartoon gore** is on by default: feathers fly, blood splats stain the mat, and wounds build up on both birds; a knocked-out bird gets X eyes and dizzy stars. Turn it off on the Chicken tab (feathers and scuffs only).
 - After **King Comb**, take a tougher champion tier. You keep your chicken, coins, and record.
 - Sound is made in code. 🔊 mutes it. ✨ / 📱 switches high vs phone graphics. 🎞️ skips fight playback (also follows your system reduce-motion setting).
 - Progress saves in the browser (`localStorage`). Old saves still load.
@@ -32,7 +34,8 @@ The page needs a local server (ES modules). Opening `index.html` as a file will 
 ## Files
 
 - `game.js` — rules (pure functions, shared by the page and the tests)
-- `world.js` — Three.js farm, chickens, and fight ring
+- `world.js` — Three.js farm, chickens, cage fights, and effects
+- `models.js` — free low-poly models built in code (cage, crowd, referee, rooster tail, crown, windmill, scarecrow, well, pumpkins, hay rolls, mailbox); static props baked to one draw call
 - `app.js` — UI, save, sound
 - `index.html` — layout
 - `vendor/three.module.min.js` — [Three.js r170](https://threejs.org/) (MIT)

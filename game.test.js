@@ -483,3 +483,52 @@ test('rival mode saves, and old or tampered saves stay fair', () => {
   assert.equal(forged.wins, 0);
   assert.ok(forged.readyAt <= now + game.NEMESIS_COOLDOWN_MS);
 });
+
+test('cage rounds: 40 exchanges play as 5 rounds of 8', () => {
+  assert.equal(game.FIGHT_ROUNDS, 5);
+  assert.equal(game.roundOf(1), 1);
+  assert.equal(game.roundOf(8), 1);
+  assert.equal(game.roundOf(9), 2);
+  assert.equal(game.roundOf(40), 5);
+  assert.equal(game.roundOf(999), 5);
+  const sim = game.simulate(game.RIVALS[3], game.RIVALS[3], fixedRng([0.5, 0.9, 0.3]));
+  sim.beats.forEach((b) => assert.ok(b.ex >= 1 && b.ex <= 40));
+});
+
+test('moneyline: favourites negative, underdogs positive, even is -100', () => {
+  assert.equal(game.moneyline(0.5), -100);
+  assert.equal(game.moneyline(0.8), -400);
+  assert.equal(game.moneyline(0.2), 400);
+  assert.equal(game.moneylineText(0.25), '+300');
+  assert.equal(game.moneylineText(0.75), '-300');
+  assert.ok(Number.isFinite(game.moneyline(1)) && Number.isFinite(game.moneyline(0)));
+});
+
+test('move names are deterministic commentary for each beat kind', () => {
+  const b = { kind: 'crit', dmg: 30, ex: 4 };
+  assert.equal(game.moveName(b, 3), game.moveName(b, 3));
+  assert.ok(['flying spur kick', 'spinning wing slap', 'beak uppercut', 'takedown and ground peck'].includes(game.moveName(b, 3)));
+  assert.ok(game.moveName({ kind: 'dodge', dmg: 0, ex: 1 }, 0).length > 0);
+});
+
+test('fight summary: KO on a crit finish, TKO on a hit, decisions never contradict the result', () => {
+  const ko = game.fightSummary({ won: true, log: [{ who: 'you', kind: 'crit', dmg: 50, youHp: 40, foeHp: 0, ex: 10 }] });
+  assert.equal(ko.method, 'KO');
+  assert.equal(ko.round, 2);
+  const tko = game.fightSummary({ won: false, log: [{ who: 'foe', kind: 'hit', dmg: 5, youHp: 0, foeHp: 9, ex: 3 }] });
+  assert.equal(tko.method, 'TKO');
+  assert.equal(tko.winner, 'foe');
+
+  // Two tanks that can barely hurt each other go the distance.
+  const tank = { hp: 900, atk: 4, def: 9, spd: 10 };
+  for (const seed of [0.1, 0.4, 0.7]) {
+    const sim = game.simulate(tank, tank, fixedRng([seed, 0.5, 0.95, 0.2]));
+    const r = { won: sim.won, log: sim.beats };
+    const s = game.fightSummary(r);
+    assert.equal(s.method, 'DEC');
+    assert.equal(s.cards.length, 3);
+    const forWinner = s.cards.filter((c) => (sim.won ? c[0] > c[1] : c[1] > c[0])).length;
+    assert.ok(forWinner >= 2, 'at least two judges agree with the result');
+    s.cards.forEach((c) => assert.ok(c[0] <= 50 && c[1] <= 50));
+  }
+});

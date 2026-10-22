@@ -28,6 +28,17 @@ header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
 .floater { position:absolute; font-weight:900; text-shadow:0 2px 0 rgba(0,0,0,.45); transform:translate(-50%,-50%); white-space:nowrap; }
 #hpHud { position:absolute; left:8px; right:8px; top:8px; display:none; gap:8px; z-index:3; }
 #hpHud.on { display:grid; grid-template-columns:1fr 1fr; }
+#roundTag { position:absolute; left:50%; top:100%; transform:translate(-50%, 6px); background:#b3121b; color:#fff; font-weight:900; font-size:11px; padding:3px 8px; border-radius:6px; letter-spacing:.5px; }
+#callTxt { position:absolute; left:8px; right:8px; bottom:54px; text-align:center; font-weight:900; font-size:14px; color:#fff; text-shadow:0 2px 0 rgba(0,0,0,.6); background:linear-gradient(90deg, rgba(18,13,32,0), rgba(18,13,32,.78) 20%, rgba(18,13,32,.78) 80%, rgba(18,13,32,0)); padding:6px 10px; display:none; z-index:3; pointer-events:none; }
+#callTxt.on { display:block; }
+#callTxt.big { color:var(--gold); font-size:16px; }
+#callTxt.pop { animation: callIn .25s ease-out; }
+@keyframes callIn { from { transform:translateY(8px); opacity:0; } to { transform:none; opacity:1; } }
+.vs .tape td { text-align:center !important; color:var(--gold) !important; font-size:11px; letter-spacing:2px; padding-bottom:4px; border-bottom:2px solid #b3121b; }
+.vs .line td { border-top:1px solid #3d3360; padding-top:6px; }
+.corner { display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:4px; vertical-align:middle; }
+.corner.red { background:#e0383f; } .corner.blue { background:#3b7bff; }
+.gore-btn { width:100%; margin-top:10px; min-height:42px; font-size:14px; }
 .hpbox { background:rgba(18,13,32,.72); border-radius:10px; padding:5px 8px 7px; font-size:11px; font-weight:800; }
 .hpbox .bar { height:7px; margin-top:3px; }
 .bars { display:grid; grid-template-columns: 1fr 1fr; gap:8px; margin-top:8px; }
@@ -210,7 +221,9 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
         <canvas id="stage" aria-label="Your farm"></canvas>
         <div id="bootFail">This browser could not start the 3D farm. Try a newer phone or desktop browser with WebGL.</div>
         <div class="goal" id="goal">Goal: become champion</div>
+        <div id="callTxt" aria-live="polite"></div>
         <div id="hpHud">
+          <div id="roundTag">R1 / 5</div>
           <div class="hpbox">You <div class="bar"><i id="hpYou" style="width:100%;background:#4cd17b"></i></div></div>
           <div class="hpbox" id="hpFoeName">Foe <div class="bar"><i id="hpFoe" style="width:100%;background:#ff5a5f"></i></div></div>
         </div>
@@ -293,6 +306,7 @@ button { font:inherit; color:inherit; border:0; cursor:pointer; touch-action: ma
         </div>
         <div class="looks" id="looks"></div>
         <p class="hint">Looks are just for fun — they do not change stats. Level up to get 3 points and +15 health.</p>
+        <button class="btn alt gore-btn" id="goreBtn" aria-pressed="true">🩸 Cartoon gore: on</button>
         <div class="small-row">
           <button class="btn alt" id="renameBtn">✏️ Rename</button>
           <button class="btn alt" id="resetBtn">🥚 New chicken</button>

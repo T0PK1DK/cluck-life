@@ -5,6 +5,6 @@
   "scripts": {
     "start": "python3 -m http.server 8765",
     "test": "node --test game.test.js",
-    "build": "rm -rf dist && mkdir -p dist/vendor && cp index.html game.js world.js app.js dist/ && cp vendor/three.module.min.js dist/vendor/ && node -e \"require('./dist/game.js')\" && test -s dist/vendor/three.module.min.js && echo built dist/"
+    "build": "rm -rf dist && mkdir -p dist/vendor && cp index.html game.js world.js models.js app.js dist/ && cp vendor/three.module.min.js dist/vendor/ && node -e \"require('./dist/game.js')\" && test -s dist/vendor/three.module.min.js && echo built dist/"
   }
 }

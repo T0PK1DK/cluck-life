@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createModels } from './models.js';
 
 // Low-poly cozy farm + fight ring. Shared geometries, instancing, and a
 // quality ladder so phones stay smooth. No external models or textures.
@@ -51,6 +52,7 @@ export function createWorld(canvas, hooks) {
     circle: new THREE.CircleGeometry(1, 12),
   };
 
+  const models = createModels(mat, geo, () => quality);
   const scene = new THREE.Scene();
   scene.background = hex('#7ec8f5');
   scene.fog = new THREE.Fog(0x9ed6f5, 14, 32);
@@ -161,9 +163,14 @@ export function createWorld(canvas, hooks) {
     const footR = mesh(geo.box, '#f2a33a', -0.12, 0.03, 0.12, 0.12, 0.04, 0.18);
     g.add(legL, legR, footL, footR);
 
-    g.userData.parts = { shadow: shadow, body: bodyM, tail: tail, wingL: wingL, wingR: wingR, head: head, eyeL: eyeL, eyeR: eyeR, glintL: glintL, glintR: glintR };
+    const xEyes = models.xEyes();
+    head.add(xEyes);
+    const stars = models.dizzyStars();
+    stars.position.set(0, 1.5, 0.3);
+    g.add(stars);
+    g.userData.parts = { shadow: shadow, body: bodyM, tail: tail, wingL: wingL, wingR: wingR, head: head, eyeL: eyeL, eyeR: eyeR, glintL: glintL, glintR: glintR, xEyes: xEyes, stars: stars, wounds: null };
     g.userData.look = { body: body, comb: comb };
-    g.userData.anim = { kind: null, t: 0, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, run: false, flap: false, wander: 0, face: 1 };
+    g.userData.anim = { kind: null, t: 0, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, ko: false, run: false, flap: false, wander: 0, face: 1 };
     return g;
   }
 
@@ -193,6 +200,10 @@ export function createWorld(canvas, hooks) {
   me.scale.setScalar(BIRD);
   me.position.set(0.25, 0, 0.55);
   root.add(me);
+  const crown = models.crown();
+  crown.position.set(0, 0.4, -0.02);
+  crown.visible = false;
+  me.userData.parts.head.add(crown);
   let foe = null;
 
   // ---------- farm ----------
@@ -344,8 +355,23 @@ export function createWorld(canvas, hooks) {
   const pond = mesh(geo.circle, '#3d9adf', 3.55, 0.03, 3.05, 1.15, 1, 0.85);
   pond.rotation.x = -Math.PI / 2;
   root.add(pond);
-  root.add(mesh(geo.box, '#e6c15a', -3.7, 0.28, -1.15, 0.7, 0.55, 0.48));
-  root.add(mesh(geo.box, '#d4a63c', -3.35, 0.22, -0.7, 0.55, 0.42, 0.4));
+  // Free code-built props. Static ones are baked to one draw call each.
+  root.add(models.hayRolls([[-3.75, -1.1, 0.3], [-3.2, -0.55, -0.4]]));
+  const mill = models.windmill();
+  mill.position.set(-1.3, 0, -6.0);
+  root.add(mill);
+  const crow = models.scarecrow();
+  crow.position.set(-4.35, 0, 2.9);
+  crow.rotation.y = 0.5;
+  root.add(crow);
+  const wellM = models.well();
+  wellM.position.set(-5.5, 0, -0.45);
+  root.add(wellM);
+  root.add(models.pumpkins([[-0.25, -4.05, 1], [0.35, -4.2, 0.8], [2.85, -4.05, 1.1]]));
+  const box = models.mailbox();
+  box.position.set(5.75, 0, 0.95);
+  box.rotation.y = -0.5;
+  root.add(box);
 
   const sunBall = mesh(geo.sphere, '#ffe36b', 11, 9.2, -10, 1.15, 1.15, 1.15);
   root.add(sunBall);
@@ -399,6 +425,7 @@ export function createWorld(canvas, hooks) {
   visitor.scale.setScalar(BIRD * 0.92);
   visitor.position.set(1.85, 0, -3.35);
   visitor.userData.kind = 'rival';
+  visitor.add(models.roosterTail('#ffd34d'));
   visitor.visible = false;
   const bubble = new THREE.Group();
   bubble.position.set(0, 1.62, 0.2);
@@ -408,41 +435,125 @@ export function createWorld(canvas, hooks) {
   visitor.userData.bubble = bubble;
   root.add(visitor);
 
-  // ---------- arena ----------
-  const arena = new THREE.Group();
+  // ---------- arena: the cage ----------
+  const cage = models.octagon();
+  const arena = cage.arena;
   arena.position.set(ARENA_X, 0, 0);
-  const grassPad = mesh(geo.circle, '#6fbf4f', 0, 0.0, 0, 8.5, 1, 8.5);
-  grassPad.rotation.x = -Math.PI / 2;
-  arena.add(grassPad);
-  const dirt = mesh(geo.circle, '#d8a86a', 0, 0.03, 0, 3.4, 1, 3.4);
-  dirt.rotation.x = -Math.PI / 2;
-  arena.add(dirt);
-  const inner = mesh(geo.circle, '#c49658', 0, 0.04, 0, 2.4, 1, 2.4);
-  inner.rotation.x = -Math.PI / 2;
-  arena.add(inner);
-  for (let i = 0; i < 12; i += 1) {
-    const a = (i / 12) * Math.PI * 2;
-    arena.add(mesh(geo.box, '#8b5a2b', Math.cos(a) * 3.15, 0.42, Math.sin(a) * 3.15, 0.18, 0.84, 0.18));
-  }
-  const crowdN = quality === 'phone' ? 10 : 16;
-  const crowd = new THREE.InstancedMesh(geo.sphere, mat('#6b4f9e'), crowdN);
-  {
-    const d = new THREE.Object3D();
-    for (let i = 0; i < crowdN; i += 1) {
-      const a = -0.9 + (i / (crowdN - 1)) * 1.8;
-      d.position.set(Math.sin(a) * 4.05, 1.05, -2.15 - Math.cos(a) * 0.35);
-      d.scale.set(0.28, 0.34, 0.28);
-      d.updateMatrix();
-      crowd.setMatrixAt(i, d.matrix);
-    }
-    crowd.instanceMatrix.needsUpdate = true;
-    arena.add(crowd);
-  }
-  arena.add(mesh(geo.box, '#ffb022', -2.4, 0.7, -1.5, 0.1, 1.4, 0.1));
-  arena.add(mesh(geo.sphere, '#ff7a2a', -2.4, 1.5, -1.5, 0.22, 0.22, 0.22));
-  arena.add(mesh(geo.box, '#ffb022', 2.4, 0.7, -1.5, 0.1, 1.4, 0.1));
-  arena.add(mesh(geo.sphere, '#ff7a2a', 2.4, 1.5, -1.5, 0.22, 0.22, 0.22));
   root.add(arena);
+  // One spotlight over the cage (no shadow map). The yard lights dim in
+  // fight mode so the cage reads like a night card.
+  const spot = new THREE.SpotLight(0xfff1d6, 2.4, 0, 0.62, 0.55, 0);
+  spot.position.set(ARENA_X, 7, 1.5);
+  spot.target.position.set(ARENA_X, 0, 0);
+  scene.add(spot, spot.target);
+  const referee = makeChicken('#f4f4f4', '#d12f2f');
+  referee.add(models.refereeKit());
+  referee.scale.setScalar(BIRD * 0.78);
+  const REF_HOME = new THREE.Vector3(ARENA_X + 0.2, 0, -2.3);
+  referee.position.copy(REF_HOME);
+  root.add(referee);
+  const SKY = { bg: hex('#7ec8f5'), fog: hex('#9ed6f5') };
+  const NIGHT = { bg: hex('#120e1c'), fog: hex('#120e1c') };
+
+  // ---------- cartoon gore ----------
+  // Feathers always fly; blood splats, mat stains and red wounds only when
+  // gore is on. All pooled so long fights do not allocate.
+  let gore = true;
+  const decals = [];
+  const decalPool = [];
+  const feathers = [];
+  const featherPool = [];
+  let shake = 0;
+  let zoom = 0;
+  let zoomTarget = 0;
+  let cheer = 0;
+
+  function stain(x, z, size) {
+    if (!gore) return;
+    const cap = quality === 'phone' ? 12 : 24;
+    let d = decals.length >= cap ? decals.shift() : decalPool.pop();
+    if (!d) {
+      d = new THREE.Mesh(geo.circle, mat('#8f0d14', { polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+      d.rotation.x = -Math.PI / 2;
+    }
+    d.position.set(x, 0.065, z);
+    d.rotation.z = Math.random() * 6;
+    d.userData.size = size;
+    d.userData.grow = reduceMotion ? 1 : 0;
+    d.userData.stretch = 0.6 + Math.random() * 0.7;
+    d.scale.set(0.01, 0.01, 1);
+    d.visible = true;
+    if (!d.parent) root.add(d);
+    decals.push(d);
+  }
+
+  function featherBurst(x, y, z, color, n) {
+    const count = quality === 'phone' ? Math.min(n, 4) : n;
+    for (let i = 0; i < count; i += 1) {
+      const f = featherPool.pop() || new THREE.Mesh(geo.plane, mat(color, { side: THREE.DoubleSide }));
+      f.material = mat(color, { side: THREE.DoubleSide });
+      f.scale.set(0.09, 0.2, 1);
+      f.position.set(x, y, z);
+      f.userData.vx = (Math.random() - 0.5) * 2.2;
+      f.userData.vy = 1.0 + Math.random() * 1.4;
+      f.userData.vz = (Math.random() - 0.5) * 2.2;
+      f.userData.spin = (Math.random() - 0.5) * 9;
+      f.userData.life = 1.6 + Math.random() * 0.6;
+      f.visible = true;
+      if (!f.parent) root.add(f);
+      feathers.push(f);
+    }
+  }
+
+  function stepGore(dt) {
+    for (let i = feathers.length - 1; i >= 0; i -= 1) {
+      const f = feathers[i];
+      const u = f.userData;
+      u.life -= dt;
+      u.vy = Math.max(-0.6, u.vy - 3 * dt);
+      u.vx *= 1 - dt * 1.5;
+      u.vz *= 1 - dt * 1.5;
+      f.position.x += u.vx * dt + Math.sin(clock.t * 5 + i) * dt * 0.4;
+      f.position.y = Math.max(0.07, f.position.y + u.vy * dt);
+      f.position.z += u.vz * dt;
+      f.rotation.z += u.spin * dt;
+      f.rotation.x += u.spin * 0.5 * dt;
+      if (u.life <= 0) { f.visible = false; feathers.splice(i, 1); featherPool.push(f); }
+    }
+    for (let i = 0; i < decals.length; i += 1) {
+      const d = decals[i];
+      if (d.userData.grow < 1) d.userData.grow = Math.min(1, d.userData.grow + dt * 7);
+      const k = d.userData.size * d.userData.grow;
+      d.scale.set(k, k * d.userData.stretch, 1);
+    }
+  }
+
+  function clearGore() {
+    while (decals.length) { const d = decals.pop(); d.visible = false; decalPool.push(d); }
+    while (feathers.length) { const f = feathers.pop(); f.visible = false; featherPool.push(f); }
+  }
+
+  // Fresh wound overlay for a fight, built for the current gore setting.
+  function arm(ch) {
+    const p = ch.userData.parts;
+    if (p.wounds) ch.remove(p.wounds);
+    p.wounds = models.wounds(gore);
+    ch.add(p.wounds);
+    Object.assign(ch.userData.anim, { ko: false });
+  }
+  function hurt(ch, frac) {
+    const w = ch.userData.parts.wounds;
+    if (!w) return;
+    const st = w.userData.stages;
+    const show = frac < 0.25 ? 3 : frac < 0.5 ? 2 : frac < 0.8 ? 1 : 0;
+    st.forEach((list, i) => list.forEach((m) => { m.visible = i < show; }));
+  }
+  function heal(ch) {
+    if (!ch) return;
+    const p = ch.userData.parts;
+    if (p.wounds) { ch.remove(p.wounds); p.wounds = null; }
+    ch.userData.anim.ko = false;
+  }
 
   // pickables
   const pickables = [dummy, posts, track, feeder, coop, plots[0], plots[1], plots[2], visitor];
@@ -468,9 +579,9 @@ export function createWorld(canvas, hooks) {
     const focus = base.look;
     return {
       look: focus,
-      x: focus.x + Math.sin(yaw) * dist * Math.cos(pitch),
-      y: focus.y + dist * Math.sin(pitch),
-      z: focus.z + Math.cos(yaw) * dist * Math.cos(pitch),
+      x: focus.x + Math.sin(yaw) * (dist - zoom) * Math.cos(pitch),
+      y: focus.y + (dist - zoom) * Math.sin(pitch),
+      z: focus.z + Math.cos(yaw) * (dist - zoom) * Math.cos(pitch),
     };
   }
 
@@ -483,6 +594,10 @@ export function createWorld(canvas, hooks) {
     camTarget.set(next.x, next.y, next.z);
     camera.position.lerp(camTarget, camK);
     camera.lookAt(look);
+    if (shake > 0 && !reduceMotion) {
+      camera.position.x += (Math.random() - 0.5) * shake;
+      camera.position.y += (Math.random() - 0.5) * shake;
+    }
   }
 
   function snapOrbit() {
@@ -498,8 +613,9 @@ export function createWorld(canvas, hooks) {
     mode = next;
     if (next === 'fight' || next === 'preview') {
       yaw = 0.1;
-      pitch = 0.3;
-      // Portrait phones: step back so the near ring posts do not block the birds.
+      // High enough to see over the near cage fence, like a broadcast cam.
+      pitch = 0.46;
+      // Portrait phones: step back so the near cage fence does not block the birds.
       dist = camera.aspect < 1.1 ? 8.6 : 7.0;
     } else {
       yaw = 0.46;
@@ -608,6 +724,20 @@ export function createWorld(canvas, hooks) {
     p.eyeR.scale.y = EYE_Y * (blink ? 0.15 : 1);
     p.glintL.visible = !blink;
     p.glintR.visible = !blink;
+    if (p.xEyes) {
+      p.xEyes.visible = !!a.ko;
+      p.eyeL.visible = !a.ko;
+      p.eyeR.visible = !a.ko;
+      if (a.ko) { p.glintL.visible = false; p.glintR.visible = false; }
+      p.stars.visible = !!a.ko && a.dead > 0.6;
+      if (p.stars.visible) {
+        const kids = p.stars.children;
+        for (let i = 0; i < kids.length; i += 1) {
+          const ang = clock.t * 4 + (i / kids.length) * Math.PI * 2;
+          kids[i].position.set(Math.cos(ang) * 0.32, Math.sin(clock.t * 6 + i) * 0.04, Math.sin(ang) * 0.32);
+        }
+      }
+    }
     p.body.material.emissive = hex(a.flash > 0 ? '#ffffff' : '#000000');
     p.body.material.emissiveIntensity = a.flash;
   }
@@ -707,25 +837,28 @@ export function createWorld(canvas, hooks) {
     }
   }
 
-  function ensureFoe(color, comb) {
+  function ensureFoe(color, comb, rooster) {
+    if (foe && !!foe.userData.rooster !== !!rooster) { root.remove(foe); foe = null; }
     if (foe) {
       paintChicken(foe, color, comb);
       if (!foe.parent) root.add(foe);
       return foe;
     }
     foe = makeChicken(color, comb);
+    foe.userData.rooster = !!rooster;
+    if (rooster) foe.add(models.roosterTail(comb));
     foe.scale.setScalar(BIRD);
     root.add(foe);
     return foe;
   }
 
-  function showRival(color, comb) {
+  function showRival(color, comb, rooster) {
     if (fighting && !fighting.done) return;
-    const key = String(color) + '|' + String(comb);
+    const key = String(color) + '|' + String(comb) + '|' + !!rooster;
     if (previewing && previewKey === key && foe && mode === 'preview') return;
     previewKey = key;
     previewing = true;
-    ensureFoe(color, comb);
+    ensureFoe(color, comb, rooster);
     Object.assign(foe.userData.anim, { kind: null, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, face: -1 });
     foe.position.set(ARENA_X + 1.55, 0, 0.1);
     me.position.set(ARENA_X - 1.55, 0, 0.1);
@@ -746,7 +879,13 @@ export function createWorld(canvas, hooks) {
   function startFight(result) {
     previewing = false;
     previewKey = '';
-    ensureFoe(result.foe.color, result.foe.comb);
+    ensureFoe(result.foe.color, result.foe.comb, result.mode === 'nemesis');
+    clearGore();
+    arm(me);
+    arm(foe);
+    referee.position.copy(REF_HOME);
+    zoom = 0;
+    zoomTarget = 0;
     foe.position.set(ARENA_X + 1.55, 0, 0.1);
     Object.assign(foe.userData.anim, { kind: null, peck: 0, hop: 0, flash: 0, lean: 0, dead: 0, face: -1 });
     me.position.set(ARENA_X - 1.55, 0, 0.1);
@@ -761,15 +900,21 @@ export function createWorld(canvas, hooks) {
       maxFoe: result.foe.hp,
       done: false,
       impact: false,
+      round: 1,
+      called: false,
     };
     if (reduceMotion) {
       fighting.phase = 'end';
       fighting.done = true;
       fighting.i = result.log.length;
+      hurt(me, result.pHp / fighting.maxYou);
+      hurt(foe, result.aHp / fighting.maxFoe);
+      finishPose(fighting);
       if (emit.onHp) emit.onHp(result.pHp / fighting.maxYou, result.aHp / fighting.maxFoe);
       if (emit.onFightOver) emit.onFightOver(result);
       return;
     }
+    if (emit.onRound) emit.onRound(1);
     if (emit.onBanner) {
       emit.onBanner({
         text: 'VS ' + result.foe.name.toUpperCase(),
@@ -796,7 +941,33 @@ export function createWorld(canvas, hooks) {
       foe.position.x = homeFoe;
       aMe.hop = Math.abs(Math.sin(f.t * 8)) * 0.14;
       aFoe.hop = Math.abs(Math.sin(f.t * 8 + 1)) * 0.14;
-      if (f.t > 1.25) { f.phase = 'beats'; f.t = 0; f.i = 0; if (emit.onBanner) emit.onBanner(null); aMe.hop = 0; aFoe.hop = 0; }
+      if (f.t > 1.3 && !f.called) {
+        f.called = true;
+        if (emit.onBanner) emit.onBanner({ text: 'ROUND 1', sub: 'Fight!', tap: false });
+        if (emit.onSfx) emit.onSfx('bell');
+      }
+      if (f.t > 2.1) { f.phase = 'beats'; f.t = 0; f.i = 0; if (emit.onBanner) emit.onBanner(null); aMe.hop = 0; aFoe.hop = 0; }
+      poseRef(dt, null);
+      poseChicken(me, dt);
+      poseChicken(foe, dt);
+      return;
+    }
+    if (f.phase === 'break') {
+      // Between rounds: back to the corners, bell, round card.
+      me.position.x += (homeMe - 0.4 - me.position.x) * Math.min(1, dt * 5);
+      foe.position.x += (homeFoe + 0.4 - foe.position.x) * Math.min(1, dt * 5);
+      aMe.face = 1;
+      aFoe.face = -1;
+      aMe.hop = 0;
+      aFoe.hop = 0;
+      if (f.t > 1.4) {
+        f.phase = 'beats';
+        f.t = 0;
+        me.position.x = homeMe;
+        foe.position.x = homeFoe;
+        if (emit.onBanner) emit.onBanner(null);
+      }
+      poseRef(dt, null);
       poseChicken(me, dt);
       poseChicken(foe, dt);
       return;
@@ -804,7 +975,19 @@ export function createWorld(canvas, hooks) {
     if (f.phase === 'beats') {
       const beat = f.result.log[f.i];
       if (!beat) { endFight(); poseChicken(me, dt); poseChicken(foe, dt); return; }
-      const len = beat.kind === 'crit' ? BEAT * 1.5 : BEAT;
+      const rnd = (f.result.beatRounds && f.result.beatRounds[f.i]) || f.round;
+      if (rnd > f.round && f.t === 0) {
+        f.round = rnd;
+        f.phase = 'break';
+        if (emit.onBanner) emit.onBanner({ text: 'ROUND ' + rnd, sub: 'Corners… and fight!', tap: false });
+        if (emit.onSfx) emit.onSfx('bell');
+        if (emit.onRound) emit.onRound(rnd);
+        return;
+      }
+      // The finishing blow plays in slow motion with a push-in.
+      const last = f.i === f.result.log.length - 1 && (beat.youHp <= 0 || beat.foeHp <= 0);
+      if (last) zoomTarget = 1.6;
+      const len = (beat.kind === 'crit' ? BEAT * 1.5 : BEAT) * (last ? 2.6 : 1);
       const p = f.t / len;
       const att = beat.who === 'you' ? me : foe;
       const def = beat.who === 'you' ? foe : me;
@@ -841,13 +1024,32 @@ export function createWorld(canvas, hooks) {
           const crit = beat.kind === 'crit';
           if (emit.onSfx) emit.onSfx(crit ? 'crit' : 'hit');
           if (emit.onFloat) emit.onFloat(worldToScreen(def.position.clone().setY(1.55)), (crit ? 'CRIT ' : '-') + beat.dmg, crit ? '#ffd34d' : '#ffffff');
-          burst(def.position.x, 0.9, def.position.z, crit ? '#ffd34d' : '#ffffff', crit ? 10 : 5);
+          const x = def.position.x;
+          const z = def.position.z;
+          featherBurst(x, 1.0, z, def.userData.look.body, crit ? 7 : 3);
+          if (gore) {
+            burst(x, 0.95, z, '#b3121b', crit ? 9 : 4);
+            if (crit) burst(x, 1.0, z, '#7a0a10', 5);
+            if (crit || Math.random() < 0.35) stain(x + dir * (0.2 + Math.random() * 0.4), z + (Math.random() - 0.5) * 0.7, crit ? 0.32 + Math.random() * 0.2 : 0.12 + Math.random() * 0.12);
+          } else {
+            burst(x, 0.9, z, crit ? '#ffd34d' : '#ffffff', crit ? 10 : 5);
+          }
+          hurt(def, (beat.who === 'you' ? beat.foeHp / f.maxFoe : beat.youHp / f.maxYou));
+          if (crit) {
+            shake = 0.22;
+            cheer = 1;
+            if (emit.onSfx) emit.onSfx('crowd');
+          } else {
+            shake = Math.max(shake, 0.06);
+          }
         }
+        if (emit.onCall && f.result.calls) emit.onCall(f.result.calls[f.i], beat);
       }
       if (f.t >= len) {
         f.t = 0; f.i += 1; f.impact = false;
         att.position.x = attHome; def.position.x = defHome; defA.hop = 0;
       }
+      poseRef(dt, null);
       poseChicken(me, dt);
       poseChicken(foe, dt);
       return;
@@ -855,13 +1057,46 @@ export function createWorld(canvas, hooks) {
     if (f.phase === 'end') {
       const winner = f.result.won ? me : foe;
       const loser = f.result.won ? foe : me;
+      const stoppage = f.result.summary ? f.result.summary.method !== 'DEC' : true;
       if (!reduceMotion) {
         winner.userData.anim.hop = Math.abs(Math.sin(f.t * 9)) * 0.38;
         winner.userData.anim.flap = true;
-        loser.userData.anim.dead = Math.min(1, loser.userData.anim.dead + dt * 3);
+        if (stoppage) loser.userData.anim.dead = Math.min(1, loser.userData.anim.dead + dt * 3);
+        else loser.userData.anim.lean = 0.18;
       }
+      poseRef(dt, winner);
       poseChicken(me, dt);
       poseChicken(foe, dt);
+    }
+  }
+
+  // The referee idles at the back, then steps in beside the winner.
+  function poseRef(dt, winner) {
+    const a = referee.userData.anim;
+    a.peck = 0;
+    a.flap = false;
+    a.hop = 0;
+    if (winner) {
+      const side = winner === me ? -1 : 1;
+      const tx = winner.position.x - side * 0.85;
+      referee.position.x += (tx - referee.position.x) * Math.min(1, dt * 4);
+      referee.position.z += (0.55 - referee.position.z) * Math.min(1, dt * 4);
+      a.face = side;
+      a.flap = !reduceMotion && (clock.t % 1.2) < 0.6;
+    } else {
+      referee.position.x += (REF_HOME.x + Math.sin(clock.t * 0.7) * 0.5 - referee.position.x) * Math.min(1, dt * 2);
+      referee.position.z += (REF_HOME.z - referee.position.z) * Math.min(1, dt * 2);
+      a.face = foe && me.position.x > foe.position.x ? -1 : 1;
+    }
+    poseChicken(referee, dt);
+  }
+
+  function finishPose(f) {
+    const stoppage = f.result.summary ? f.result.summary.method !== 'DEC' : true;
+    const loser = f.result.won ? foe : me;
+    if (stoppage && loser) {
+      loser.userData.anim.ko = true;
+      if (reduceMotion) loser.userData.anim.dead = 1;
     }
   }
 
@@ -871,6 +1106,12 @@ export function createWorld(canvas, hooks) {
     f.phase = 'end';
     f.t = 0;
     f.done = true;
+    zoomTarget = 0.9;
+    hurt(me, f.result.pHp / f.maxYou);
+    if (foe) hurt(foe, f.result.aHp / f.maxFoe);
+    finishPose(f);
+    cheer = 1;
+    if (emit.onSfx) emit.onSfx('crowd');
     me.position.x = ARENA_X - 1.55;
     if (foe) foe.position.x = ARENA_X + 1.55;
     me.userData.anim.hop = 0;
@@ -883,6 +1124,11 @@ export function createWorld(canvas, hooks) {
     fighting = null;
     previewing = false;
     previewKey = '';
+    heal(me);
+    clearGore();
+    zoom = 0;
+    zoomTarget = 0;
+    referee.position.copy(REF_HOME);
     if (foe) { root.remove(foe); foe = null; }
     me.position.set(0.25, 0, 0.55);
     Object.assign(me.userData.anim, { dead: 0, hop: 0, lean: 0, face: 1, kind: null });
@@ -994,6 +1240,23 @@ export function createWorld(canvas, hooks) {
         dist = 8.1;
       }
     }
+    // Night card in the cage, sunny yard at home.
+    const night = mode !== 'yard';
+    const k = reduceMotion ? 1 : Math.min(1, dt * 4);
+    scene.background.lerp(night ? NIGHT.bg : SKY.bg, k);
+    scene.fog.color.lerp(night ? NIGHT.fog : SKY.fog, k);
+    hemi.intensity += ((night ? 0.42 : 1.05) - hemi.intensity) * k;
+    sun.intensity += ((night ? 0.22 : 0.72) - sun.intensity) * k;
+    spot.visible = night;
+    zoom += (zoomTarget - zoom) * Math.min(1, dt * (reduceMotion ? 60 : 3));
+    shake = Math.max(0, shake - dt * 0.9);
+    cheer = Math.max(0, cheer - dt * 0.6);
+    if (night) {
+      cage.crowd.position.y = reduceMotion ? 0 : Math.abs(Math.sin(clock.t * (cheer > 0 ? 14 : 2.2))) * (0.03 + cheer * 0.14);
+      if (!fighting) poseRef(dt, null);
+    }
+    stepGore(dt);
+    if (!reduceMotion) mill.userData.blades.rotation.z -= dt * 0.9;
     applyOrbit();
     for (let i = parts.length - 1; i >= 0; i -= 1) {
       const p = parts[i];
@@ -1039,7 +1302,9 @@ export function createWorld(canvas, hooks) {
     getReduceMotion: function () { return reduceMotion; },
     showRival: showRival,
     hideRival: hideRival,
-    setChampion: function (on) { barn.userData.star.visible = !!on; },
+    setChampion: function (on) { barn.userData.star.visible = !!on; crown.visible = !!on; },
+    setGore: function (on) { gore = !!on; },
+    getGore: function () { return gore; },
     celebrateChampion: celebrateChampion,
     startFight: function (result) { startFight(result); },
     skipFight: function () { if (fighting) endFight(); },
