@@ -5,6 +5,8 @@ const SAVE_KEY = 'cluck-life-save-v1';
 const MUTE_KEY = 'cluck-life-muted';
 const QUAL_KEY = 'cluck-life-quality';
 const MOTION_KEY = 'cluck-life-motion';
+const SEED_KEY = 'cluck-life-seed';
+const GORE_KEY = 'cluck-life-gore';
 const $ = (id) => document.getElementById(id);
 
 let game = null;
@@ -13,8 +15,12 @@ const isNew = !game;
 if (!game) game = CL.createGame('Clucky');
 if (!game.garden) game.garden = CL.createGarden();
 if (!game.coop) game.coop = CL.createCoop();
+if (!game.rivalry) game.rivalry = CL.createRivalry();
 let bet = 10;
 let rematchIdx = null;
+let fightMode = 'ladder'; // 'ladder' | 'rival'
+let seed = 'corn';
+try { seed = CL.cropFor(localStorage.getItem(SEED_KEY)).id; } catch (e) {}
 let displayCoins = game.chicken.coins;
 let world = null;
 
@@ -22,6 +28,23 @@ function ladder() { return CL.rivalsForTier(game.tier); }
 function stars(t) { return t > 0 ? ' ' + '★'.repeat(Math.min(t, 3)) + (t > 3 ? t : '') : ''; }
 function save() { try { localStorage.setItem(SAVE_KEY, CL.saveGame(game)); } catch (e) {} }
 function fmt(n) { return (Math.round(n * 10) / 10).toString(); }
+function clockTxt(ms) {
+  const sec = Math.ceil(ms / 1000);
+  return sec >= 60 ? Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0') : sec + 's';
+}
+function calm() { return document.body.classList.contains('calm'); }
+// Tiny haptic tick on phones that support it. Follows the sound toggle.
+function buzz(ms) {
+  if (sfx.muted || calm()) return;
+  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+}
+// Restart a one-shot CSS animation class on an element.
+function kick(el, cls) {
+  if (!el || calm()) return;
+  el.classList.remove(cls);
+  void el.offsetWidth;
+  el.classList.add(cls);
+}
 
 const sfx = (function () {
   let ac = null;
@@ -70,6 +93,19 @@ const sfx = (function () {
     dodge() { tone(400, 0.14, 'sine', 0.06, 1200); },
     coin() { tone(988, 0.06, 'square', 0.05); tone(1319, 0.12, 'square', 0.05, null, 0.06); },
     nap() { tone(330, 0.3, 'sine', 0.05, 220); },
+    crowd() {
+      // A short roar: band-passed noise that swells and fades.
+      const a = ctx(); if (!a) return;
+      const dur = 1.1;
+      const n = Math.floor(a.sampleRate * dur);
+      const buf = a.createBuffer(1, n, a.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < n; i++) { const env = Math.sin(Math.PI * i / n); d[i] = (Math.random() * 2 - 1) * env; }
+      const s = a.createBufferSource(), g = a.createGain(), f = a.createBiquadFilter();
+      f.type = 'bandpass'; f.frequency.value = 650; f.Q.value = 0.6;
+      s.buffer = buf; g.gain.value = 0.16;
+      s.connect(f); f.connect(g); g.connect(a.destination); s.start();
+    },
     bell() { tone(1046, 0.4, 'triangle', 0.07); tone(1568, 0.3, 'sine', 0.04); },
     level() { [523, 659, 784, 1046].forEach((f, i) => tone(f, 0.12, 'square', 0.06, null, i * 0.08)); },
     win() { [523, 659, 784, 1046, 784, 1046].forEach((f, i) => tone(f, 0.13, 'square', 0.06, null, i * 0.1)); },
@@ -110,10 +146,43 @@ function floatAt(pt, text, color) {
   requestAnimationFrame(step);
 }
 
+// A coin hops from where it was earned up to the coin chip.
+function coinFly(pt, n) {
+  if (!pt || calm()) return;
+  const stage = $('stage').getBoundingClientRect();
+  const chip = $('coinChip').getBoundingClientRect();
+  const sx = stage.left + pt.x;
+  const sy = stage.top + pt.y;
+  const count = Math.min(5, Math.max(1, Math.round(n / 8)));
+  for (let i = 0; i < count; i += 1) {
+    const el = document.createElement('div');
+    el.className = 'coinfly';
+    el.textContent = '🪙';
+    el.style.left = sx + 'px';
+    el.style.top = sy + 'px';
+    document.body.appendChild(el);
+    const dx = chip.left + chip.width / 2 - sx;
+    const dy = chip.top + chip.height / 2 - sy;
+    setTimeout(() => {
+      el.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(.6)';
+      el.style.opacity = '0.2';
+    }, 30 + i * 70);
+    setTimeout(() => el.remove(), 760 + i * 70);
+  }
+}
+
+let lastCoins = game.chicken.coins;
+function paintCoins(n) {
+  $('coinChip').textContent = '🪙 ' + n;
+  if (n !== lastCoins) kick($('coinChip'), n > lastCoins ? 'bump' : 'dip');
+  lastCoins = n;
+}
+
 function showBanner(b) {
   const box = $('banner');
   if (!b) { box.className = ''; box.classList.remove('on'); return; }
   box.classList.add('on');
+  kick(box, 'pop');
   box.classList.toggle('bad', b.good === false);
   $('bannerTtl').textContent = b.text;
   $('bannerSub').textContent = b.sub || '';
@@ -129,6 +198,9 @@ function setHp(you, foe) {
 }
 
 function currentFoe() {
+  if (fightMode === 'rival') {
+    return { idx: -1, foe: CL.nemesisFor(game.rivalry.rank), rematch: false, nemesis: true };
+  }
   const L = ladder();
   const idx = rematchIdx == null ? Math.min(game.beaten, L.length - 1) : rematchIdx;
   return { idx, foe: L[idx], rematch: idx < game.beaten };
@@ -142,9 +214,10 @@ function paintLook() {
 let plotButtons = null;
 function paintGarden() {
   const now = Date.now();
-  const states = game.garden.plots.map((p) => CL.plotState(p, now));
+  const plots = game.garden.plots;
+  const states = plots.map((p) => CL.plotState(p, now));
   if (world) {
-    world.setGarden(states);
+    world.setGarden(plots.map((p, i) => ({ state: states[i], crop: p ? p.crop : seed, progress: CL.plotProgress(p, now) })));
     world.setEgg(CL.canCollectEgg(game.coop, now));
     world.setCare(game.chicken.energy);
   }
@@ -170,33 +243,59 @@ function paintGarden() {
     plotButtons.push(nest);
   }
   const locked = !!busy();
+  const sc = CL.cropFor(seed);
   for (let i = 0; i < CL.PLOT_COUNT; i += 1) {
     const b = plotButtons[i];
     const st = states[i];
+    const crop = CL.cropFor(plots[i] && plots[i].crop);
     b.classList.toggle('glow', st === 'ready');
+    b.style.setProperty('--p', st === 'growing' ? CL.plotProgress(plots[i], now).toFixed(3) : st === 'ready' ? '1' : '0');
+    let html;
     if (st === 'empty') {
-      b.innerHTML = '<b>🌱</b>Plant 8🪙';
-      b.disabled = locked || !CL.canPlant(game.chicken, game.garden, i);
+      html = '<b>🌱</b>Plant ' + sc.icon + ' ' + sc.cost + '🪙';
+      b.disabled = locked || !CL.canPlant(game.chicken, game.garden, i, seed);
     } else if (st === 'growing') {
-      const sec = Math.ceil(CL.plotReadyIn(game.garden.plots[i], now) / 1000);
-      b.innerHTML = '<b>🌽</b>' + sec + 's';
+      html = '<b>' + crop.icon + '</b>' + clockTxt(CL.plotReadyIn(plots[i], now));
       b.disabled = true;
     } else {
-      b.innerHTML = '<b>✨</b>Harvest';
+      html = '<b>✨</b>Harvest +' + crop.coins + '🪙';
       b.disabled = locked;
     }
+    if (b.dataset.html !== html) { b.innerHTML = html; b.dataset.html = html; }
   }
   const nest = plotButtons[CL.PLOT_COUNT];
   const eggReady = CL.canCollectEgg(game.coop, now);
   nest.classList.toggle('glow', eggReady);
-  if (eggReady) {
-    nest.innerHTML = '<b>🥚</b>Collect ' + CL.EGG_COINS + '🪙';
-    nest.disabled = locked;
-  } else {
-    const sec = Math.ceil(CL.coopReadyIn(game.coop, now) / 1000);
-    nest.innerHTML = '<b>🪺</b>Egg in ' + sec + 's';
-    nest.disabled = true;
-  }
+  nest.style.setProperty('--p', eggReady ? '1' : (1 - CL.coopReadyIn(game.coop, now) / CL.LAY_MS).toFixed(3));
+  const nestHtml = eggReady ? '<b>🥚</b>Collect ' + CL.EGG_COINS + '🪙' : '<b>🪺</b>Egg in ' + clockTxt(CL.coopReadyIn(game.coop, now));
+  if (nest.dataset.html !== nestHtml) { nest.innerHTML = nestHtml; nest.dataset.html = nestHtml; }
+  nest.disabled = eggReady ? locked : true;
+  document.querySelectorAll('[data-seed]').forEach((b, i) => {
+    b.classList.toggle('on', b.dataset.seed === seed);
+    if (b.dataset.seed === seed) $('seedSeg').style.setProperty('--i', i);
+    b.disabled = locked;
+  });
+  $('tendBtn').disabled = locked || !CL.canTend(game.chicken, game.garden, seed, now);
+  paintRival(now);
+}
+
+// Per-second bits of rival mode: Rusty at the fence, the tab dot, and the
+// cooldown on the challenge button. Text only, so nothing steals focus.
+function paintRival(now) {
+  const t = now == null ? Date.now() : now;
+  const wait = CL.nemesisReadyIn(game.rivalry, t);
+  const f = world && world.fighting && world.fighting();
+  if (world && world.setVisitor) world.setVisitor(wait <= 0 && !f);
+  // Dots only promise a bout you can actually take (ready + 20 energy), so
+  // they clear when you are tired instead of nagging every 90s.
+  const can = CL.canFightNemesis(game, t) && !f;
+  $('fightDot').style.display = can && !fightTabOn() ? 'block' : 'none';
+  $('rivalDot').style.display = can && fightMode !== 'rival' ? 'block' : 'none';
+  if (fightMode !== 'rival' || f) return;
+  const c = game.chicken;
+  const btn = $('fightBtn');
+  btn.disabled = !!busy() || !CL.canFightNemesis(game, t);
+  btn.textContent = wait > 0 ? CL.NEMESIS.name + ' is resting · ' + clockTxt(wait) : c.energy < CL.FIGHT_ENERGY ? 'Too tired (needs 20⚡)' : '🔥 Challenge ' + CL.NEMESIS.name + ' (20⚡)';
 }
 
 function busy() {
@@ -252,14 +351,15 @@ function updateUI() {
   $('goal').style.display = fight ? 'none' : 'block';
   if (mid) {
     document.querySelectorAll('.panel button:not(.tab)').forEach((b) => { b.disabled = true; });
-    $('coinChip').textContent = '🪙 ' + displayCoins;
+    paintCoins(displayCoins);
     $('energyTxt').textContent = Math.round(c.energy) + '/100';
     $('energyFill').style.width = c.energy + '%';
     return;
   }
   if (bet > c.coins) bet = Math.max(CL.MIN_BET, BET_CHIPS.filter((v) => v <= c.coins).pop() || CL.MIN_BET);
   $('lvlChip').textContent = 'Lv ' + c.level;
-  $('coinChip').textContent = '🪙 ' + c.coins;
+  paintCoins(c.coins);
+  $('energyBox').classList.toggle('low', c.energy < CL.FIGHT_ENERGY);
   $('energyTxt').textContent = Math.round(c.energy) + '/100';
   $('energyFill').style.width = c.energy + '%';
   $('xpTxt').textContent = c.xp + '/' + c.xpNeed;
@@ -277,21 +377,41 @@ function updateUI() {
   $('feedBtn').disabled = lock || !CL.canFeed(c);
   $('napBtn').disabled = lock || !CL.canRest(c);
 
-  const { idx, foe, rematch } = currentFoe();
+  const { idx, foe, rematch, nemesis } = currentFoe();
+  const rv = game.rivalry;
+  document.querySelectorAll('[data-mode]').forEach((b, i) => {
+    b.classList.toggle('on', b.dataset.mode === fightMode);
+    if (b.dataset.mode === fightMode) $('fightSeg').style.setProperty('--i', i);
+    b.disabled = lock;
+  });
+  $('pane-fight').classList.toggle('rival-mode', !!nemesis);
   $('ladder').innerHTML = L.map((r, i) => '<i class="' + (i < game.beaten ? 'done' : i === game.beaten ? 'now' : '') + '" title="' + r.name + '"></i>').join('');
-  $('rivalName').textContent = foe.name + (rematch ? ' (rematch)' : '');
-  $('rivalSub').textContent = 'Rival ' + (idx + 1) + ' of ' + CL.RIVALS.length + ' · purse ' + (rematch ? Math.floor(foe.purse / 4) : foe.purse) + '🪙';
+  if (nemesis) {
+    $('rivalName').textContent = foe.name + ' the ' + foe.styleLabel;
+    $('rivalSub').textContent = 'Rank ' + (foe.rank + 1) + ' · no bet · purse ' + foe.purse + '🪙';
+    const next = CL.nemesisFor(Math.min(CL.NEMESIS_MAX_RANK, rv.rank + 1));
+    $('nemesisNote').innerHTML = 'Record vs ' + foe.name + ': <b>' + rv.wins + '–' + rv.losses + '</b>. Win and he comes back as a ' + next.styleLabel.toLowerCase() + '; lose and he eases off. He needs ' + Math.round(CL.NEMESIS_COOLDOWN_MS / 1000) + 's between bouts.';
+  } else {
+    $('rivalName').textContent = foe.name + (rematch ? ' (rematch)' : '');
+    $('rivalSub').textContent = 'Rival ' + (idx + 1) + ' of ' + CL.RIVALS.length + ' · purse ' + (rematch ? Math.floor(foe.purse / 4) : foe.purse) + '🪙';
+  }
   $('rivalPic').style.background = foe.color;
   const rows = [['❤️ HP', c.hp, foe.hp], ['🥊 ATK', c.atk, foe.atk], ['🛡️ DEF', c.def, foe.def], ['💨 SPD', c.spd, foe.spd]];
-  $('vsTable').innerHTML = '<tr><td></td><td>' + game.name + '</td><td>' + foe.name + '</td></tr>' + rows.map((r) => '<tr><td>' + r[0] + '</td><td class="' + (r[1] >= r[2] ? 'up' : 'down') + '">' + fmt(r[1]) + '</td><td>' + r[2] + '</td></tr>').join('');
   const p = CL.estimateWinChance(c, foe);
-  const word = p >= 0.75 ? 'Easy' : p >= 0.5 ? 'Even fight' : p >= 0.25 ? 'Risky' : p > 0.02 ? 'Very tough' : 'Way too strong, train more';
+  // Tale of the tape: stats side by side, with each fighter's betting line.
+  $('vsTable').innerHTML = '<tr class="tape"><td colspan="3">TALE OF THE TAPE</td></tr>' +
+    '<tr><td></td><td><span class="corner red"></span>' + game.name + '</td><td><span class="corner blue"></span>' + foe.name + '</td></tr>' +
+    rows.map((r) => '<tr><td>' + r[0] + '</td><td class="' + (r[1] >= r[2] ? 'up' : 'down') + '">' + fmt(r[1]) + '</td><td>' + r[2] + '</td></tr>').join('') +
+    '<tr class="line"><td>📈 Line</td><td>' + CL.moneylineText(p) + '</td><td>' + CL.moneylineText(1 - p) + '</td></tr>';
+  const word = p >= 0.75 ? 'Heavy favourite' : p >= 0.5 ? 'Slight favourite' : p >= 0.25 ? 'Underdog' : p > 0.02 ? 'Big underdog' : 'Way too strong, train more';
   $('oddsTxt').textContent = 'Odds: ' + word + ' (' + Math.round(p * 100) + '%)';
   $('oddsFill').style.width = Math.max(4, p * 100) + '%';
   $('oddsFill').style.background = p >= 0.5 ? 'var(--green)' : p >= 0.25 ? 'var(--gold)' : 'var(--red)';
   renderBets();
-  $('fightBtn').disabled = lock || !CL.canFight(c, bet);
-  $('fightBtn').textContent = c.energy < CL.FIGHT_ENERGY ? 'Too tired (needs 20⚡)' : c.coins < bet ? 'Not enough coins' : 'FIGHT! bet ' + bet + '🪙';
+  if (!nemesis) {
+    $('fightBtn').disabled = lock || !CL.canFight(c, bet);
+    $('fightBtn').textContent = c.energy < CL.FIGHT_ENERGY ? 'Too tired (needs 20⚡)' : c.coins < bet ? 'Not enough coins' : 'FIGHT! bet ' + bet + '🪙';
+  }
   const rm = $('rematch');
   rm.innerHTML = '';
   if (game.beaten > 0) {
@@ -312,18 +432,38 @@ function updateUI() {
   $('sRec').textContent = game.wins + '-' + game.losses;
   $('ptsNum').textContent = c.points;
   $('ptsBox').style.display = c.points > 0 ? 'block' : 'none';
+  if (c.points > 0 && $('ptsBadge').textContent !== String(c.points)) kick($('ptsBadge'), 'bounce');
   $('ptsBadge').style.display = c.points > 0 ? 'block' : 'none';
   $('ptsBadge').textContent = c.points;
   document.querySelectorAll('.plus').forEach((b) => { b.disabled = lock || c.points <= 0; });
   $('renameBtn').disabled = lock; $('resetBtn').disabled = lock;
+  $('goreBtn').disabled = lock;
   paintLooks();
   paintGarden();
 }
 
-document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
-  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t));
-  document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + t.dataset.tab));
+function openTab(name) {
+  document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x.dataset.tab === name));
+  document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === 'pane-' + name));
   syncPreview();
+  paintRival();
+}
+document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => {
+  if (!t.classList.contains('on')) sfx.tap();
+  openTab(t.dataset.tab);
+}));
+document.querySelectorAll('[data-mode]').forEach((b) => b.addEventListener('click', () => {
+  if (busy() || fightMode === b.dataset.mode) return;
+  fightMode = b.dataset.mode;
+  sfx.tap();
+  updateUI();
+}));
+document.querySelectorAll('[data-seed]').forEach((b) => b.addEventListener('click', () => {
+  if (seed === b.dataset.seed) return;
+  seed = CL.cropFor(b.dataset.seed).id;
+  try { localStorage.setItem(SEED_KEY, seed); } catch (e) {}
+  sfx.tap();
+  paintGarden();
 }));
 
 function fightTabOn() {
@@ -338,8 +478,8 @@ function syncPreview() {
   if (f) return;
   if (Date.now() < holdPreviewUntil) return;
   if (fightTabOn()) {
-    const { foe } = currentFoe();
-    world.showRival(foe.color, foe.comb);
+    const { foe, nemesis } = currentFoe();
+    world.showRival(foe.color, foe.comb, !!nemesis);
   } else {
     world.hideRival();
   }
@@ -392,7 +532,7 @@ function doTrain(type, grade) {
   const pt = world ? world.meScreen() : { x: 80, y: 80 };
   floatAt(pt, gw[0], gw[1]);
   floatAt({ x: pt.x, y: pt.y + 22 }, '+' + r.bonus.toFixed(1) + ' ' + STAT_NAME[r.stat], '#4cd17b');
-  if (r.quality === 'perfect') { sfx.perfect(); if (world) world.burstAtMe('#ffd34d', 10); }
+  if (r.quality === 'perfect') { sfx.perfect(); buzz([12, 40, 12]); if (world) world.burstAtMe('#ffd34d', 10); }
   else if (r.quality === 'miss') sfx.miss();
   else sfx.cluck();
   afterLevels(r.levels);
@@ -401,11 +541,13 @@ function doTrain(type, grade) {
 
 function doPlant(slot) {
   if (busy()) return;
-  const r = CL.plant(game.chicken, game.garden, slot);
+  const r = CL.plant(game.chicken, game.garden, slot, undefined, seed);
   if (!r.ok) { toast(r.reason); return; }
   sfx.coin();
+  buzz(8);
   if (world) world.play('plot', { slot: slot });
-  toast('Corn planted — back in 45 seconds');
+  const c = CL.cropFor(r.crop);
+  toast(c.icon + ' ' + c.name + ' planted — ready in ' + clockTxt(c.growMs));
   save(); updateUI();
 }
 function doHarvest(slot) {
@@ -413,11 +555,34 @@ function doHarvest(slot) {
   const r = CL.harvest(game.chicken, game.garden, slot);
   if (!r.ok) { toast(r.reason); return; }
   sfx.coin();
-  if (world) { world.play('plot', { slot: slot }); world.burstAtMe('#ffd34d', 8); }
+  buzz(15);
+  if (world) { world.play('plot', { slot: slot }); world.burstAtMe(r.crop === 'wheat' ? '#f0c95a' : '#ffd34d', 8); }
   const pt = world ? world.meScreen() : { x: 80, y: 80 };
   floatAt(pt, '+' + r.coins + '🪙', '#ffd34d');
+  coinFly(pt, r.coins);
   save(); updateUI();
 }
+function doTend() {
+  if (busy()) return;
+  const r = CL.tendAll(game.chicken, game.garden, seed);
+  if (!r.ok) { toast(r.reason); return; }
+  sfx.coin();
+  buzz(15);
+  const slots = r.harvested.length ? r.harvested : r.planted;
+  if (world) {
+    world.play('plot', { slot: slots[slots.length - 1] });
+    if (r.harvested.length) world.burstAtMe('#ffd34d', 10);
+  }
+  const pt = world ? world.meScreen() : { x: 80, y: 80 };
+  if (r.harvested.length) coinFly(pt, r.coins + r.planted.length * CL.cropFor(seed).cost);
+  const bits = [];
+  if (r.harvested.length) bits.push('harvested ' + r.harvested.length);
+  if (r.planted.length) bits.push('planted ' + r.planted.length + ' ' + CL.cropFor(seed).icon);
+  floatAt(pt, (r.coins >= 0 ? '+' : '') + r.coins + '🪙', r.coins >= 0 ? '#ffd34d' : '#ffffff');
+  toast('🧺 ' + bits.join(', '));
+  save(); updateUI();
+}
+$('tendBtn').addEventListener('click', doTend);
 function doCollectEgg() {
   if (busy()) return;
   const r = CL.collectEgg(game.chicken, game.coop);
@@ -426,6 +591,8 @@ function doCollectEgg() {
   if (world) { world.play('egg'); world.burstAtMe('#fff6e8', 8); }
   const pt = world ? world.meScreen() : { x: 80, y: 80 };
   floatAt(pt, '+' + r.coins + '🪙', '#ffd34d');
+  coinFly(pt, r.coins);
+  buzz(10);
   toast('Warm egg from the nest');
   save(); updateUI();
 }
@@ -460,10 +627,24 @@ $('fightBtn').addEventListener('click', startBrawl);
 function startBrawl() {
   if (busy() || (world && world.fighting && world.fighting())) return;
   const coinsBefore = game.chicken.coins;
-  const r = CL.fightRival(game, bet, undefined, rematchIdx == null ? undefined : rematchIdx);
+  const r = fightMode === 'rival'
+    ? CL.fightNemesis(game)
+    : CL.fightRival(game, bet, undefined, rematchIdx == null ? undefined : rematchIdx);
   if (!r.ok) { toast(r.reason); return; }
   displayCoins = Math.max(0, coinsBefore - r.bet);
-  if (r.won && !r.rematch) rematchIdx = null;
+  if (r.won && !r.rematch && r.mode !== 'nemesis') rematchIdx = null;
+  buzz(20);
+  // Presentation only: round per beat, a commentary line, and the finish.
+  r.beatRounds = r.log.map((b) => CL.roundOf(b.ex));
+  r.summary = CL.fightSummary(r);
+  r.calls = r.log.map((b, i) => {
+    const att = b.who === 'you' ? game.name : r.foe.name;
+    const def = b.who === 'you' ? r.foe.name : game.name;
+    const move = CL.moveName(b, i);
+    if (b.kind === 'dodge') return def + ' ' + move + '!';
+    if (b.kind === 'crit') return att + ' lands a ' + move.toUpperCase() + '!';
+    return att + ' lands a ' + move + '.';
+  });
   save();
   sfx.bell();
   r.youMax = game.chicken.hp;
@@ -498,13 +679,24 @@ $('skipBtn').addEventListener('click', () => { if (world) world.skipFight(); });
 
 function onFightOver(r) {
   $('skipBtn').style.display = 'none';
-  if (r.won) {
-    showBanner({ text: r.newChampion ? 'CHAMPION! 👑' : 'VICTORY!', sub: '+' + r.reward + ' coins · +' + r.xp + ' XP' + (r.unlocked ? ' · ' + r.unlocked + ' unlocked' : ''), good: true, tap: true });
+  $('callTxt').classList.remove('on');
+  const how = r.summary ? r.summary.text : '';
+  const winnerName = r.won ? game.name : r.foe.name;
+  const method = r.summary && r.summary.method !== 'DEC' ? ' by ' + r.summary.method : r.summary ? ' on the cards' : '';
+  if (r.mode === 'nemesis') {
+    const next = CL.nemesisFor(r.rank);
+    showBanner(r.won
+      ? { text: 'RUSTY BEATEN! 🔥', sub: how + ' · +' + r.reward + ' coins · +' + r.xp + ' XP · he will be back as a ' + next.styleLabel.toLowerCase(), good: true, tap: true }
+      : { text: 'RUSTY WINS', sub: how + ' · no coins lost · +' + r.xp + ' XP · he eases off a rank', good: false, tap: true });
+    if (r.won) sfx.win(); else sfx.lose();
+  } else if (r.won) {
+    showBanner({ text: r.newChampion ? 'CHAMPION! 👑' : 'VICTORY' + method.toUpperCase() + '!', sub: winnerName + ' wins · ' + how + ' · +' + r.reward + ' coins · +' + r.xp + ' XP' + (r.unlocked ? ' · ' + r.unlocked + ' unlocked' : ''), good: true, tap: true });
     sfx.win();
   } else {
-    showBanner({ text: 'DEFEAT', sub: 'Lost ' + r.bet + ' coins · +' + r.xp + ' XP · train and try again', good: false, tap: true });
+    showBanner({ text: 'DEFEAT', sub: winnerName + ' wins · ' + how + ' · lost ' + r.bet + ' coins · +' + r.xp + ' XP', good: false, tap: true });
     sfx.lose();
   }
+  buzz(r.won ? [20, 60, 20, 60, 40] : 60);
   updateUI();
   if (r.levels && r.levels.length) setTimeout(() => toast('⭐ Level ' + r.levels[r.levels.length - 1] + '! Spend your points in Chicken'), 600);
 }
@@ -515,6 +707,7 @@ function onContinue() {
   world.leaveFight();
   showBanner(null);
   setHp(null, null);
+  $('callTxt').classList.remove('on');
   displayCoins = game.chicken.coins;
   if (champWin && world && world.celebrateChampion) {
     world.celebrateChampion();
@@ -529,6 +722,14 @@ try {
       if (kind === 'peck' || kind === 'run' || kind === 'dodge') openTiming(kind);
       else if (kind === 'feed') $('feedBtn').click();
       else if (kind === 'egg') doCollectEgg();
+      else if (kind === 'rival') {
+        if (busy()) return;
+        fightMode = 'rival';
+        sfx.cluck();
+        openTab('fight');
+        updateUI();
+        if (window.innerWidth < 860) document.querySelector('.panel').scrollIntoView({ behavior: calm() ? 'auto' : 'smooth', block: 'start' });
+      }
       else if (kind === 'plot') {
         const st = CL.plotState(game.garden.plots[slot]);
         if (st === 'empty') doPlant(slot);
@@ -538,8 +739,17 @@ try {
     onContinue,
     onBanner: showBanner,
     onHp: setHp,
-    onSfx(name) { if (sfx[name]) sfx[name](); },
+    onSfx(name) { if (sfx[name]) sfx[name](); if (name === 'crit') buzz(25); },
     onFloat: floatAt,
+    onCall(text, beat) {
+      if (!text) return;
+      const el = $('callTxt');
+      el.textContent = text;
+      el.classList.toggle('big', beat && beat.kind === 'crit');
+      el.classList.add('on');
+      kick(el, 'pop');
+    },
+    onRound(n) { $('roundTag').textContent = 'R' + n + ' / ' + CL.FIGHT_ROUNDS; },
     onFightOver,
   });
 } catch (err) {
@@ -565,6 +775,24 @@ try {
   });
 })();
 
+(function goreToggle() {
+  let on = true;
+  try { on = localStorage.getItem(GORE_KEY) !== '0'; } catch (e) {}
+  function apply() {
+    if (world && world.setGore) world.setGore(on);
+    $('goreBtn').textContent = on ? '🩸 Cartoon gore: on' : '🪶 Cartoon gore: off (feathers only)';
+    $('goreBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  apply();
+  $('goreBtn').addEventListener('click', () => {
+    if (busy()) return;
+    on = !on;
+    try { localStorage.setItem(GORE_KEY, on ? '1' : '0'); } catch (e) {}
+    apply();
+    sfx.tap();
+  });
+})();
+
 (function motionToggle() {
   let reduce = false;
   try {
@@ -574,6 +802,7 @@ try {
   } catch (e) {}
   function apply() {
     if (world && world.setReduceMotion) world.setReduceMotion(reduce);
+    document.body.classList.toggle('calm', reduce);
     $('motionBtn').textContent = reduce ? '⏸️' : '🎞️';
     $('motionBtn').title = reduce ? 'Motion off (tap to animate fights)' : 'Motion on (tap to skip fight playback)';
     $('motionBtn').setAttribute('aria-pressed', reduce ? 'true' : 'false');

@@ -366,3 +366,169 @@ test('coop nest: one egg at a time, pays after the lay timer, old saves start la
   assert.equal(saved.coop.lastCollectAt, t0);
   assert.equal(game.collectEgg(saved.chicken, saved.coop, t0 + game.LAY_MS).ok, true);
 });
+
+test('wheat grows slower than corn and pays more; old corn plots still load', () => {
+  const corn = game.CROPS.corn;
+  const wheat = game.CROPS.wheat;
+  assert.ok(wheat.growMs > corn.growMs);
+  assert.ok(wheat.coins - wheat.cost > corn.coins - corn.cost);
+  // Neither crop is a must-pick: coins per minute stay within 20%.
+  const rate = (c) => (c.coins - c.cost) / c.growMs;
+  assert.ok(Math.abs(rate(wheat) - rate(corn)) / rate(corn) < 0.2);
+
+  const chicken = game.createChicken();
+  const garden = game.createGarden();
+  const t0 = 1000000;
+  assert.equal(game.plant(chicken, garden, 0, t0, 'wheat').ok, true);
+  assert.equal(chicken.coins, 100 - wheat.cost);
+  assert.equal(game.plotState(garden.plots[0], t0 + corn.growMs), 'growing');
+  assert.ok(game.plotProgress(garden.plots[0], t0 + wheat.growMs / 2) > 0.45);
+  assert.equal(game.plotState(garden.plots[0], t0 + wheat.growMs), 'ready');
+  const r = game.harvest(chicken, garden, 0, t0 + wheat.growMs);
+  assert.equal(r.ok, true);
+  assert.equal(r.crop, 'wheat');
+  assert.equal(r.coins, wheat.coins);
+
+  // Unknown seeds fall back to corn; a v3 save with crop:'corn' still works.
+  assert.equal(game.cropFor('mutant-melon').id, 'corn');
+  const g = game.loadGame(JSON.stringify({ chicken: game.createChicken(), garden: { plots: [{ crop: 'corn', plantedAt: 5 }, { crop: 'wheat', plantedAt: 6 }, { crop: '??', plantedAt: 7 }] } }));
+  assert.deepEqual(g.garden.plots.map((p) => p.crop), ['corn', 'wheat', 'corn']);
+  assert.equal(game.cropFor('__proto__').id, 'corn');
+});
+
+test('tend all harvests ready plots and replants while coins allow, still three plots', () => {
+  const chicken = game.createChicken();
+  const garden = game.createGarden();
+  const t0 = 50000;
+  game.plant(chicken, garden, 0, t0, 'corn');
+  game.plant(chicken, garden, 1, t0, 'corn');
+  const later = t0 + game.CROPS.corn.growMs;
+  chicken.coins = 0;
+  const r = game.tendAll(chicken, garden, 'wheat', later);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.harvested, [0, 1]);
+  // 36 coins from corn buys two wheat (14 each), not three.
+  assert.deepEqual(r.planted, [0, 1]);
+  assert.equal(chicken.coins, 36 - 28);
+  assert.equal(r.coins, 36 - 28);
+  assert.equal(garden.plots.length, game.PLOT_COUNT);
+  assert.equal(garden.plots[2], null);
+  assert.equal(game.canTend(chicken, garden, 'wheat', later), false);
+  const none = game.tendAll(chicken, garden, 'wheat', later);
+  assert.equal(none.ok, false);
+  // 8 coins left is exactly one corn seed for the last plot.
+  assert.equal(game.canTend(chicken, garden, 'corn', later), true);
+  chicken.coins = 7;
+  assert.equal(game.canTend(chicken, garden, 'corn', later), false);
+});
+
+test('rival mode: Rusty starts beatable, ranks up on a win, eases off on a loss', () => {
+  const g = game.createGame('Test');
+  const now = 1e9;
+  g.rivalry = game.createRivalry(now);
+  assert.equal(game.canFightNemesis(g, now), true);
+  const first = game.nemesisFor(0);
+  assert.ok(game.estimateWinChance(g.chicken, first) > 0.5, 'a fresh chicken should usually beat rank 0');
+  assert.ok(game.nemesisFor(5).hp > game.nemesisFor(1).hp);
+  assert.notEqual(game.nemesisFor(0).style, game.nemesisFor(1).style);
+
+  const win = game.fightNemesis(g, fixedRng([0.99, 0.0, 0.5]), now);
+  assert.equal(win.ok, true);
+  assert.equal(win.mode, 'nemesis');
+  assert.equal(win.won, true);
+  assert.equal(win.bet, 0);
+  assert.equal(g.rivalry.rank, 1);
+  assert.equal(g.rivalry.wins, 1);
+  assert.equal(g.chicken.coins, 100 + first.purse);
+  assert.equal(g.chicken.energy, 100 - game.FIGHT_ENERGY);
+  // Ladder record is separate from the rivalry.
+  assert.equal(g.wins, 0);
+  assert.equal(g.beaten, 0);
+
+  // Cooldown: no back-to-back farming.
+  assert.equal(game.canFightNemesis(g, now + 1000), false);
+  assert.equal(game.fightNemesis(g, Math.random, now + 1000).ok, false);
+  assert.equal(game.nemesisReadyIn(g.rivalry, now + 1000), game.NEMESIS_COOLDOWN_MS - 1000);
+
+  const later = now + game.NEMESIS_COOLDOWN_MS;
+  g.chicken.hp = 1; g.chicken.atk = 0;
+  const coins = g.chicken.coins;
+  const loss = game.fightNemesis(g, fixedRng([0.99, 0.5]), later);
+  assert.equal(loss.won, false);
+  assert.equal(g.chicken.coins, coins, 'losing to Rusty never costs coins');
+  assert.equal(g.rivalry.rank, 0);
+  assert.equal(g.rivalry.losses, 1);
+  assert.equal(game.fightNemesis(g, fixedRng([0.5]), later).ok, false, 'cooldown after a loss too');
+
+  g.chicken.energy = 5;
+  assert.equal(game.canFightNemesis(g, later + game.NEMESIS_COOLDOWN_MS), false);
+});
+
+test('rival mode saves, and old or tampered saves stay fair', () => {
+  const now = Date.now();
+  const g = game.createGame('Saver');
+  g.rivalry = { rank: 3, wins: 4, losses: 1, readyAt: now + 5000 };
+  const back = game.loadGame(game.saveGame(g));
+  assert.equal(back.rivalry.rank, 3);
+  assert.equal(back.rivalry.wins, 4);
+  assert.equal(back.rivalry.losses, 1);
+  assert.ok(back.rivalry.readyAt > now);
+
+  const v3 = game.loadGame(JSON.stringify({ version: 3, chicken: game.createChicken() }));
+  assert.equal(v3.rivalry.rank, 0);
+  assert.equal(game.canFightNemesis(v3), true);
+
+  const forged = game.normalizeRivalry({ rank: 9999, wins: -3, readyAt: now + 1e12 }, now);
+  assert.equal(forged.rank, game.NEMESIS_MAX_RANK);
+  assert.equal(forged.wins, 0);
+  assert.ok(forged.readyAt <= now + game.NEMESIS_COOLDOWN_MS);
+});
+
+test('cage rounds: 40 exchanges play as 5 rounds of 8', () => {
+  assert.equal(game.FIGHT_ROUNDS, 5);
+  assert.equal(game.roundOf(1), 1);
+  assert.equal(game.roundOf(8), 1);
+  assert.equal(game.roundOf(9), 2);
+  assert.equal(game.roundOf(40), 5);
+  assert.equal(game.roundOf(999), 5);
+  const sim = game.simulate(game.RIVALS[3], game.RIVALS[3], fixedRng([0.5, 0.9, 0.3]));
+  sim.beats.forEach((b) => assert.ok(b.ex >= 1 && b.ex <= 40));
+});
+
+test('moneyline: favourites negative, underdogs positive, even is -100', () => {
+  assert.equal(game.moneyline(0.5), -100);
+  assert.equal(game.moneyline(0.8), -400);
+  assert.equal(game.moneyline(0.2), 400);
+  assert.equal(game.moneylineText(0.25), '+300');
+  assert.equal(game.moneylineText(0.75), '-300');
+  assert.ok(Number.isFinite(game.moneyline(1)) && Number.isFinite(game.moneyline(0)));
+});
+
+test('move names are deterministic commentary for each beat kind', () => {
+  const b = { kind: 'crit', dmg: 30, ex: 4 };
+  assert.equal(game.moveName(b, 3), game.moveName(b, 3));
+  assert.ok(['flying spur kick', 'spinning wing slap', 'beak uppercut', 'takedown and ground peck'].includes(game.moveName(b, 3)));
+  assert.ok(game.moveName({ kind: 'dodge', dmg: 0, ex: 1 }, 0).length > 0);
+});
+
+test('fight summary: KO on a crit finish, TKO on a hit, decisions never contradict the result', () => {
+  const ko = game.fightSummary({ won: true, log: [{ who: 'you', kind: 'crit', dmg: 50, youHp: 40, foeHp: 0, ex: 10 }] });
+  assert.equal(ko.method, 'KO');
+  assert.equal(ko.round, 2);
+  const tko = game.fightSummary({ won: false, log: [{ who: 'foe', kind: 'hit', dmg: 5, youHp: 0, foeHp: 9, ex: 3 }] });
+  assert.equal(tko.method, 'TKO');
+  assert.equal(tko.winner, 'foe');
+
+  // Two tanks that can barely hurt each other go the distance.
+  const tank = { hp: 900, atk: 4, def: 9, spd: 10 };
+  for (const seed of [0.1, 0.4, 0.7]) {
+    const sim = game.simulate(tank, tank, fixedRng([seed, 0.5, 0.95, 0.2]));
+    const r = { won: sim.won, log: sim.beats };
+    const s = game.fightSummary(r);
+    assert.equal(s.method, 'DEC');
+    assert.equal(s.cards.length, 3);
+    const forWinner = s.cards.filter((c) => (sim.won ? c[0] > c[1] : c[1] > c[0])).length;
+    assert.ok(forWinner >= 2, 'at least two judges agree with the result');
+    s.cards.forEach((c) => assert.ok(c[0] <= 50 && c[1] <= 50));
+  }
+});

@@ -13,7 +13,11 @@
   const REST_ENERGY = 25;
   const SCRAP_COINS = 5;
   const MAX_ROUNDS = 40;
-  const SAVE_VERSION = 3;
+  // Cage presentation: the 40 exchanges play as 5 rounds of 8. Only the
+  // pacing and the scorecards use this; the fight math is unchanged.
+  const ROUND_EXCHANGES = 8;
+  const FIGHT_ROUNDS = MAX_ROUNDS / ROUND_EXCHANGES;
+  const SAVE_VERSION = 4;
   const TRAIN_TYPES = { peck: 'atk', run: 'spd', dodge: 'def' };
   // Tap-timing training: how well you timed the tap scales the gain.
   const TRAIN_QUALITY = { perfect: 1.5, good: 1, miss: 0.6 };
@@ -23,6 +27,13 @@
   const GROW_MS = 45000;
   const HARVEST_COINS = 18;
   const HARVEST_ENERGY = 15;
+  // Crops on the same three plots. Wheat trades a slower grow for a bigger
+  // harvest, so it suits leaving the tab; corn is the quick snack between
+  // fights. Coins per minute stay close so neither is a must-pick.
+  const CROPS = {
+    corn: { id: 'corn', name: 'Corn', icon: '🌽', cost: PLANT_COST, growMs: GROW_MS, coins: HARVEST_COINS, energy: HARVEST_ENERGY },
+    wheat: { id: 'wheat', name: 'Wheat', icon: '🌾', cost: 14, growMs: 120000, coins: 40, energy: 5 },
+  };
   // Coop nest: one coin egg at a time, like a tiny Egg Case Farm loop.
   // Cap of one waiting egg so it never becomes an AFK tycoon.
   const LAY_MS = 60000;
@@ -36,6 +47,18 @@
     { id: 3, name: 'Storm', body: '#8a8f99', comb: '#c22424' },
     { id: 4, name: 'Ink', body: '#2a2a2e', comb: '#ffd700' },
     { id: 5, name: 'Sky', body: '#7eb6ff', comb: '#ff6b9d' },
+  ];
+
+  // Rival mode: one recurring nemesis who drops by the fence. No bet, a
+  // short cooldown between bouts, and a rank that rises when you win and
+  // slips when you lose, so it stays a close fight without becoming a farm.
+  const NEMESIS = { name: 'Rusty', color: '#c8553d', comb: '#ffd34d' };
+  const NEMESIS_COOLDOWN_MS = 90000;
+  const NEMESIS_MAX_RANK = 40;
+  const NEMESIS_STYLES = [
+    { id: 'brawler', label: 'Brawler', hp: 1, atk: 1.25, def: 0.85, spd: 0.9 },
+    { id: 'sprinter', label: 'Sprinter', hp: 0.95, atk: 0.9, def: 0.85, spd: 1.3 },
+    { id: 'tank', label: 'Tank', hp: 1.2, atk: 0.9, def: 1.3, spd: 0.8 },
   ];
 
   // The rival ladder. Beat each one to unlock the next. Stats are fixed, so
@@ -77,6 +100,10 @@
     return { lastCollectAt: now == null ? Date.now() : now };
   }
 
+  function createRivalry(now) {
+    return { rank: 0, wins: 0, losses: 0, readyAt: now == null ? Date.now() : now };
+  }
+
   function createGame(name) {
     return {
       version: SAVE_VERSION,
@@ -84,6 +111,7 @@
       chicken: createChicken(),
       garden: createGarden(),
       coop: createCoop(),
+      rivalry: createRivalry(),
       beaten: 0, // how many rivals on the ladder you have beaten
       tier: 0, // champion tier: 0 = first ladder, +1 each time you go for a new crown
       wins: 0,
@@ -219,38 +247,51 @@
     for (let i = 0; i < PLOT_COUNT; i += 1) {
       const p = src[i];
       if (p && typeof p === 'object' && Number.isFinite(Number(p.plantedAt))) {
-        garden.plots[i] = { crop: 'corn', plantedAt: Math.floor(Number(p.plantedAt)) };
+        garden.plots[i] = { crop: cropFor(p.crop).id, plantedAt: Math.floor(Number(p.plantedAt)) };
       }
     }
     return garden;
   }
 
+  // Unknown or missing crop ids fall back to corn (old saves only had corn).
+  function cropFor(id) {
+    return Object.prototype.hasOwnProperty.call(CROPS, id) ? CROPS[id] : CROPS.corn;
+  }
+
   function plotState(plot, now) {
     if (!plot) return 'empty';
     const t = (now == null ? Date.now() : now) - plot.plantedAt;
-    if (t >= GROW_MS) return 'ready';
+    if (t >= cropFor(plot.crop).growMs) return 'ready';
     return 'growing';
   }
 
   function plotReadyIn(plot, now) {
     if (!plot) return 0;
-    const left = GROW_MS - ((now == null ? Date.now() : now) - plot.plantedAt);
+    const left = cropFor(plot.crop).growMs - ((now == null ? Date.now() : now) - plot.plantedAt);
     return Math.max(0, left);
   }
 
-  function canPlant(chicken, garden, slot) {
-    const i = slot | 0;
-    return !!garden && i >= 0 && i < PLOT_COUNT && !garden.plots[i] && chicken.coins >= PLANT_COST;
+  // 0..1 for the growing animation (sprout height, button fill).
+  function plotProgress(plot, now) {
+    if (!plot) return 0;
+    const grow = cropFor(plot.crop).growMs;
+    return Math.max(0, Math.min(1, 1 - plotReadyIn(plot, now) / grow));
   }
 
-  function plant(chicken, garden, slot, now) {
+  function canPlant(chicken, garden, slot, crop) {
     const i = slot | 0;
+    return !!garden && i >= 0 && i < PLOT_COUNT && !garden.plots[i] && chicken.coins >= cropFor(crop).cost;
+  }
+
+  function plant(chicken, garden, slot, now, crop) {
+    const i = slot | 0;
+    const c = cropFor(crop);
     if (!garden || i < 0 || i >= PLOT_COUNT) return { ok: false, reason: 'No such plot' };
     if (garden.plots[i]) return { ok: false, reason: 'Plot is already planted' };
-    if (chicken.coins < PLANT_COST) return { ok: false, reason: 'Need 8 coins to plant' };
-    chicken.coins -= PLANT_COST;
-    garden.plots[i] = { crop: 'corn', plantedAt: now == null ? Date.now() : now };
-    return { ok: true, slot: i, growMs: GROW_MS };
+    if (chicken.coins < c.cost) return { ok: false, reason: 'Need ' + c.cost + ' coins to plant ' + c.name.toLowerCase() };
+    chicken.coins -= c.cost;
+    garden.plots[i] = { crop: c.id, plantedAt: now == null ? Date.now() : now };
+    return { ok: true, slot: i, crop: c.id, growMs: c.growMs };
   }
 
   function harvest(chicken, garden, slot, now) {
@@ -259,11 +300,50 @@
     const plot = garden.plots[i];
     if (!plot) return { ok: false, reason: 'Nothing planted' };
     if (plotState(plot, now) !== 'ready') return { ok: false, reason: 'Still growing' };
+    const c = cropFor(plot.crop);
     garden.plots[i] = null;
-    chicken.coins += HARVEST_COINS;
+    chicken.coins += c.coins;
     const before = chicken.energy;
-    chicken.energy = Math.min(100, chicken.energy + HARVEST_ENERGY);
-    return { ok: true, coins: HARVEST_COINS, energy: chicken.energy - before };
+    chicken.energy = Math.min(100, chicken.energy + c.energy);
+    return { ok: true, slot: i, crop: c.id, coins: c.coins, energy: chicken.energy - before };
+  }
+
+  // One-tap farm round for phones: harvest everything that is ready, then
+  // replant every empty plot with the chosen seed while coins allow.
+  function tendAll(chicken, garden, crop, now) {
+    if (!garden) return { ok: false, reason: 'No garden' };
+    const t = now == null ? Date.now() : now;
+    const harvested = [];
+    const planted = [];
+    let coins = 0;
+    let energy = 0;
+    for (let i = 0; i < PLOT_COUNT; i += 1) {
+      if (plotState(garden.plots[i], t) !== 'ready') continue;
+      const r = harvest(chicken, garden, i, t);
+      harvested.push(i);
+      coins += r.coins;
+      energy += r.energy;
+    }
+    for (let i = 0; i < PLOT_COUNT; i += 1) {
+      if (!canPlant(chicken, garden, i, crop)) continue;
+      const r = plant(chicken, garden, i, t, crop);
+      planted.push(i);
+      coins -= cropFor(r.crop).cost;
+    }
+    if (!harvested.length && !planted.length) {
+      const empty = garden.plots.some((p) => !p);
+      return { ok: false, reason: empty ? 'Need ' + cropFor(crop).cost + ' coins to plant' : 'Nothing ready yet' };
+    }
+    return { ok: true, harvested: harvested, planted: planted, coins: coins, energy: energy };
+  }
+
+  function canTend(chicken, garden, crop, now) {
+    if (!garden) return false;
+    for (let i = 0; i < PLOT_COUNT; i += 1) {
+      if (plotState(garden.plots[i], now) === 'ready') return true;
+      if (canPlant(chicken, garden, i, crop)) return true;
+    }
+    return false;
   }
 
   function normalizeCoop(raw, now) {
@@ -358,6 +438,100 @@
     return { ok: true, tier: game.tier };
   }
 
+  function nemesisStyle(rank) {
+    const r = Math.max(0, rank | 0);
+    return NEMESIS_STYLES[r % NEMESIS_STYLES.length];
+  }
+
+  // Rusty's stats come from his rank, not from yours, so training still
+  // pays off. The curve starts just under a fresh chicken and climbs
+  // roughly as fast as the ladder does.
+  function nemesisFor(rank) {
+    const r = Math.max(0, Math.min(NEMESIS_MAX_RANK, rank | 0));
+    const style = nemesisStyle(r);
+    return {
+      name: NEMESIS.name,
+      color: NEMESIS.color,
+      comb: NEMESIS.comb,
+      rank: r,
+      style: style.id,
+      styleLabel: style.label,
+      hp: Math.round((85 + 45 * r) * style.hp),
+      atk: Math.round((9 + 4.5 * r) * style.atk),
+      def: Math.round((4 + 3 * r) * style.def),
+      spd: Math.round((5 + 3.2 * r) * style.spd),
+      purse: 15 + 8 * r,
+    };
+  }
+
+  function normalizeRivalry(raw, now) {
+    const t = now == null ? Date.now() : now;
+    const base = createRivalry(t);
+    if (!raw || typeof raw !== 'object') return base;
+    base.rank = Math.floor(num(raw.rank, 0, 0, NEMESIS_MAX_RANK));
+    base.wins = Math.floor(num(raw.wins, 0, 0, 1e9));
+    base.losses = Math.floor(num(raw.losses, 0, 0, 1e9));
+    // A save from the future (clock change) cannot lock the rival out for long.
+    base.readyAt = Math.floor(num(raw.readyAt, t, 0, t + NEMESIS_COOLDOWN_MS));
+    return base;
+  }
+
+  function nemesisReadyIn(rivalry, now) {
+    const t = now == null ? Date.now() : now;
+    if (!rivalry) return 0;
+    return Math.max(0, Number(rivalry.readyAt || 0) - t);
+  }
+
+  function canFightNemesis(game, now) {
+    return !!game.rivalry && nemesisReadyIn(game.rivalry, now) <= 0 && game.chicken.energy >= FIGHT_ENERGY;
+  }
+
+  // A bout with the nemesis. No bet: winning pays his purse and ranks him
+  // up; losing costs only energy and he eases off a rank.
+  function fightNemesis(game, rng, now) {
+    const t = now == null ? Date.now() : now;
+    if (!game.rivalry) game.rivalry = createRivalry(t);
+    const rv = game.rivalry;
+    const chicken = game.chicken;
+    if (nemesisReadyIn(rv, t) > 0) return { ok: false, reason: NEMESIS.name + ' is catching his breath' };
+    if (chicken.energy < FIGHT_ENERGY) return { ok: false, reason: 'Need more energy!' };
+    const foe = nemesisFor(rv.rank);
+    chicken.energy -= FIGHT_ENERGY;
+    const sim = simulate(chicken, foe, rng || Math.random);
+    let reward = 0;
+    let xp = 10;
+    if (sim.won) {
+      reward = foe.purse;
+      chicken.coins += reward;
+      xp = 30 + 5 * foe.rank;
+      rv.wins += 1;
+      rv.rank = Math.min(NEMESIS_MAX_RANK, rv.rank + 1);
+    } else {
+      rv.losses += 1;
+      rv.rank = Math.max(0, rv.rank - 1);
+    }
+    const levels = gainXP(chicken, xp);
+    rv.readyAt = t + NEMESIS_COOLDOWN_MS;
+    return {
+      ok: true,
+      mode: 'nemesis',
+      won: sim.won,
+      bet: 0,
+      reward: reward,
+      turns: sim.rounds,
+      firstSide: sim.firstSide,
+      pHp: sim.youHp,
+      aHp: sim.foeHp,
+      log: sim.beats,
+      levels: levels,
+      xp: xp,
+      foe: foe,
+      rank: rv.rank,
+      rematch: false,
+      newChampion: false,
+    };
+  }
+
   // Dodge chance grows when the defender is faster than the attacker.
   function dodgeChance(defSpd, atkSpd) {
     return Math.max(0.04, Math.min(0.4, 0.08 + (defSpd - atkSpd) * 0.025));
@@ -381,7 +555,7 @@
     function swing(att, def) {
       const r1 = roll();
       if (r1 < dodgeChance(def.spd, att.spd)) {
-        beats.push({ who: att.side, kind: 'dodge', dmg: 0, youHp: a.hp, foeHp: b.hp });
+        beats.push({ who: att.side, kind: 'dodge', dmg: 0, youHp: a.hp, foeHp: b.hp, ex: rounds });
         return;
       }
       const crit = roll() < 0.1;
@@ -389,7 +563,7 @@
       if (crit) dmg *= 1.6;
       dmg = Math.max(1, Math.round(dmg));
       def.hp = Math.max(0, def.hp - dmg);
-      beats.push({ who: att.side, kind: crit ? 'crit' : 'hit', dmg: dmg, youHp: a.hp, foeHp: b.hp });
+      beats.push({ who: att.side, kind: crit ? 'crit' : 'hit', dmg: dmg, youHp: a.hp, foeHp: b.hp, ex: rounds });
     }
 
     let rounds = 0;
@@ -413,6 +587,96 @@
     else if (b.hp <= 0) won = true;
     else won = a.hp / a.max > b.hp / b.max; // time out: better health share wins, ties lose
     return { won: won, rounds: rounds, firstSide: first.side, beats: beats, youHp: a.hp, foeHp: b.hp };
+  }
+
+  // Which cage round (1..5) an exchange falls in.
+  function roundOf(ex) {
+    const e = Math.max(1, ex | 0);
+    return Math.min(FIGHT_ROUNDS, Math.floor((e - 1) / ROUND_EXCHANGES) + 1);
+  }
+
+  // Betting-line odds from a win chance, the way fight cards print them.
+  // Favourites are negative (bet that much to win 100), underdogs positive.
+  function moneyline(p) {
+    const q = Math.max(0.01, Math.min(0.99, Number(p) || 0.5));
+    if (q >= 0.5) return -Math.round((100 * q) / (1 - q));
+    return Math.round((100 * (1 - q)) / q);
+  }
+  function moneylineText(p) {
+    const m = moneyline(p);
+    return m > 0 ? '+' + m : String(m);
+  }
+
+  const MOVES = {
+    hit: ['jab peck', 'wing slap', 'spur kick', 'body peck', 'head peck', 'leg kick'],
+    crit: ['flying spur kick', 'spinning wing slap', 'beak uppercut', 'takedown and ground peck'],
+    dodge: ['slips the peck', 'hops back', 'ducks under it', 'checks the kick'],
+  };
+  // Commentary name for a beat. Deterministic, so a replay reads the same.
+  function moveName(beat, i) {
+    const list = MOVES[beat && beat.kind] || MOVES.hit;
+    const seed = ((i | 0) * 7 + ((beat && beat.dmg) | 0) * 3 + ((beat && beat.ex) | 0)) >>> 0;
+    return list[seed % list.length];
+  }
+
+  // How the fight ended, plus three judges' cards when it went the distance.
+  // A round goes 10-9 to whoever did more damage (10-8 when it was double),
+  // 10-10 when even. Judges 2 and 3 score close rounds a touch differently
+  // so split decisions can happen.
+  function fightSummary(result) {
+    const log = (result && result.log) || [];
+    const last = log[log.length - 1];
+    const won = !!(result && result.won);
+    const lastRound = last ? roundOf(last.ex) : 1;
+    const finished = !!last && (last.youHp <= 0 || last.foeHp <= 0);
+    if (finished) {
+      return {
+        method: last.kind === 'crit' ? 'KO' : 'TKO',
+        round: lastRound,
+        winner: won ? 'you' : 'foe',
+        cards: null,
+        text: (last.kind === 'crit' ? 'KO' : 'TKO') + ' · round ' + lastRound,
+      };
+    }
+    const dmg = [];
+    for (let r = 0; r < FIGHT_ROUNDS; r += 1) dmg.push({ you: 0, foe: 0 });
+    log.forEach((b) => { if (b.dmg) dmg[roundOf(b.ex) - 1][b.who] += b.dmg; });
+    const rounds = dmg.slice(0, lastRound);
+    const cards = [0, 1, 2].map((j) => {
+      let you = 0;
+      let foe = 0;
+      rounds.forEach((d, r) => {
+        const total = d.you + d.foe;
+        let diff = total ? (d.you - d.foe) / total : 0;
+        // Judges 2 and 3 lean a little on alternate rounds.
+        if (j > 0) diff += ((r + j) % 2 ? 0.08 : -0.08);
+        if (Math.abs(diff) < 0.05) { you += 10; foe += 10; }
+        else if (diff > 0) { you += 10; foe += diff > 0.33 ? 8 : 9; }
+        else { foe += 10; you += -diff > 0.33 ? 8 : 9; }
+      });
+      return [you, foe];
+    });
+    // The winner is decided by the rules (health share); the cards are
+    // flavour, so make sure they never contradict the result.
+    const forWinner = cards.filter((c) => (won ? c[0] > c[1] : c[1] > c[0])).length;
+    if (forWinner < 2) {
+      for (let j = 0; j < 3 && cards.filter((c) => (won ? c[0] > c[1] : c[1] > c[0])).length < 2; j += 1) {
+        const c = cards[j];
+        if (won ? c[0] <= c[1] : c[1] <= c[0]) {
+          // Take a point off the loser rather than give one past 10 a round.
+          if (won) c[1] = c[0] - 1; else c[0] = c[1] - 1;
+        }
+      }
+    }
+    const agree = cards.filter((c) => (won ? c[0] > c[1] : c[1] > c[0])).length;
+    const kind = agree === 3 ? 'Unanimous' : 'Split';
+    return {
+      method: 'DEC',
+      round: lastRound,
+      winner: won ? 'you' : 'foe',
+      cards: cards,
+      text: kind + ' decision · ' + cards.map((c) => (won ? c[0] + '-' + c[1] : c[1] + '-' + c[0])).join(', '),
+    };
   }
 
   // fight(chicken, bet, rng, rival, isRematch)
@@ -528,6 +792,7 @@
     };
     base.garden = normalizeGarden(data.garden);
     base.coop = normalizeCoop(data.coop);
+    base.rivalry = normalizeRivalry(data.rivalry);
     base.beaten = Math.floor(num(data.beaten, 0, 0, RIVALS.length));
     base.tier = Math.floor(num(data.tier, 0, 0, MAX_TIER));
     base.wins = Math.floor(num(data.wins, 0, 0, 1e9));
@@ -542,6 +807,7 @@
       chicken: game.chicken,
       garden: game.garden || createGarden(),
       coop: game.coop || createCoop(),
+      rivalry: game.rivalry || createRivalry(),
       beaten: game.beaten,
       tier: game.tier | 0,
       wins: game.wins,
@@ -567,6 +833,27 @@
     LAY_MS: LAY_MS,
     EGG_COINS: EGG_COINS,
     LOOKS: LOOKS,
+    CROPS: CROPS,
+    ROUND_EXCHANGES: ROUND_EXCHANGES,
+    FIGHT_ROUNDS: FIGHT_ROUNDS,
+    roundOf: roundOf,
+    moneyline: moneyline,
+    moneylineText: moneylineText,
+    moveName: moveName,
+    fightSummary: fightSummary,
+    NEMESIS: NEMESIS,
+    NEMESIS_COOLDOWN_MS: NEMESIS_COOLDOWN_MS,
+    NEMESIS_MAX_RANK: NEMESIS_MAX_RANK,
+    cropFor: cropFor,
+    plotProgress: plotProgress,
+    tendAll: tendAll,
+    canTend: canTend,
+    createRivalry: createRivalry,
+    nemesisFor: nemesisFor,
+    normalizeRivalry: normalizeRivalry,
+    nemesisReadyIn: nemesisReadyIn,
+    canFightNemesis: canFightNemesis,
+    fightNemesis: fightNemesis,
     careMood: careMood,
     gradeTap: gradeTap,
     tierScale: tierScale,
